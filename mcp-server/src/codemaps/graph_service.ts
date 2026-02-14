@@ -4,7 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { GraphNode, GraphEdge } from './models.js';
+import {
+  GraphNode,
+  GraphEdge,
+  SymbolSearchResult,
+  SymbolDetails,
+} from './models.js';
 import { promises as fs } from 'fs';
 import path from 'path';
 
@@ -54,12 +59,15 @@ export class GraphService {
     this.graph.edges.get(edge.source)!.push(edge);
 
     if (!this.graph.inEdges.has(edge.target)) {
-        this.graph.inEdges.set(edge.target, []);
+      this.graph.inEdges.set(edge.target, []);
     }
     this.graph.inEdges.get(edge.target)!.push(edge);
   }
 
-  public findEnclosingEntity(filePath: string, lineNumber: number): GraphNode | null {
+  public findEnclosingEntity(
+    filePath: string,
+    lineNumber: number
+  ): GraphNode | null {
     const enclosingNodes: GraphNode[] = [];
     for (const node of this.graph.nodes.values()) {
       if (node.id.startsWith(filePath) && node.type !== 'file') {
@@ -75,9 +83,9 @@ export class GraphService {
 
     // Find the most specific entity (smallest line range)
     return enclosingNodes.reduce((mostSpecific, current) => {
-        const specificRange = mostSpecific.endLine - mostSpecific.startLine;
-        const currentRange = current.endLine - current.startLine;
-        return currentRange < specificRange ? current : mostSpecific;
+      const specificRange = mostSpecific.endLine - mostSpecific.startLine;
+      const currentRange = current.endLine - current.startLine;
+      return currentRange < specificRange ? current : mostSpecific;
     });
   }
 
@@ -87,7 +95,7 @@ export class GraphService {
       if (this._byFileAndName.has(key)) {
         const nodeId = this._byFileAndName.get(key);
         if (nodeId) {
-            return this.graph.nodes.get(nodeId) || null;
+          return this.graph.nodes.get(nodeId) || null;
         }
       }
     }
@@ -101,25 +109,219 @@ export class GraphService {
     // Ambiguous or not found
     return null;
   }
-  
+
+  public searchSymbol(
+    query: string,
+    typeFilter?: string
+  ): SymbolSearchResult[] {
+    const results: SymbolSearchResult[] = [];
+    for (const [name, nodeIds] of this._byName.entries()) {
+      if (name.toLowerCase().includes(query.toLowerCase())) {
+        for (const nodeId of nodeIds) {
+          const node = this.graph.nodes.get(nodeId);
+          if (node) {
+            if (typeFilter && node.type !== typeFilter) {
+              continue;
+            }
+            results.push({
+              name: node.name,
+              type: node.type,
+              filePath: node.id.split(':', 1)[0],
+              location: {
+                startLine: node.startLine,
+                endLine: node.endLine,
+              },
+              score: query.length / name.length, // Simple scoring
+            });
+          }
+        }
+      }
+    }
+    return results.sort((a, b) => b.score - a.score);
+  }
+
+  public getSymbolDetails(
+    symbol: string,
+    filePath?: string
+  ): SymbolDetails | null {
+    const node = this.querySymbol(symbol, filePath);
+    if (!node) {
+      return null;
+    }
+
+    const relationships: SymbolDetails['relationships'] = {
+      parentClasses: [],
+      callees: [],
+      callers: [],
+      children: [],
+    };
+
+    const outgoingEdges = this.graph.edges.get(node.id) || [];
+    for (const edge of outgoingEdges) {
+      const targetNode = this.graph.nodes.get(edge.target);
+      if (targetNode) {
+        if (edge.type === 'inherits') {
+          relationships.parentClasses.push(targetNode);
+        } else if (edge.type === 'calls') {
+          relationships.callees.push(targetNode);
+        } else if (edge.type === 'contains') {
+          relationships.children.push(targetNode);
+        }
+      }
+    }
+
+    const incomingEdges = this.graph.inEdges.get(node.id) || [];
+    for (const edge of incomingEdges) {
+      if (edge.type === 'calls') {
+        const sourceNode = this.graph.nodes.get(edge.source);
+        if (sourceNode) {
+          relationships.callers.push(sourceNode);
+        }
+      }
+    }
+
+    return {
+      ...node,
+      relationships,
+    };
+  }
+
+  public findReferences(symbol: string, filePath?: string): GraphNode[] {
+    const node = this.querySymbol(symbol, filePath);
+    if (!node) {
+      return [];
+    }
+
+    const callers: GraphNode[] = [];
+    const incomingEdges = this.graph.inEdges.get(node.id) || [];
+    for (const edge of incomingEdges) {
+      if (edge.type === 'calls') {
+        const sourceNode = this.graph.nodes.get(edge.source);
+        if (sourceNode) {
+          callers.push(sourceNode);
+        }
+      }
+    }
+    return callers;
+  }
+
+  public getFileStructure(filePath: string): GraphNode | null {
+    const fileNode = this.graph.nodes.get(filePath);
+    if (!fileNode) {
+      return null;
+    }
+
+    const buildTree = (nodeId: string): any => {
+      const node = this.graph.nodes.get(nodeId);
+      if (!node) return null;
+
+      const children: any[] = [];
+      const outgoingEdges = this.graph.edges.get(nodeId) || [];
+      for (const edge of outgoingEdges) {
+        if (edge.type === 'contains') {
+          const childTree = buildTree(edge.target);
+          if (childTree) {
+            children.push(childTree);
+          }
+        }
+      }
+
+      const result = { ...node };
+      if (children.length > 0) {
+        (result as any).children = children;
+      }
+      return result;
+    };
+
+    return buildTree(filePath);
+  }
+
+  public getOutgoingDependencies(filePath: string): GraphNode[] {
+    const dependencies: GraphNode[] = [];
+    const outgoingEdges = this.graph.edges.get(filePath) || [];
+    for (const edge of outgoingEdges) {
+      if (edge.type === 'imports') {
+        const targetNode = this.graph.nodes.get(edge.target);
+        if (targetNode) {
+          dependencies.push(targetNode);
+        }
+      }
+    }
+    return dependencies;
+  }
+
+  public clearFile(filePath: string) {
+    const nodesToRemove: string[] = [];
+    for (const nodeId of this.graph.nodes.keys()) {
+      if (nodeId.startsWith(filePath)) {
+        nodesToRemove.push(nodeId);
+      }
+    }
+
+    for (const nodeId of nodesToRemove) {
+      // Clean up outgoing edges
+      const outgoing = this.graph.edges.get(nodeId) || [];
+      for (const edge of outgoing) {
+        const targetInEdges = this.graph.inEdges.get(edge.target);
+        if (targetInEdges) {
+          this.graph.inEdges.set(
+            edge.target,
+            targetInEdges.filter((e) => e.source !== nodeId)
+          );
+        }
+      }
+      this.graph.edges.delete(nodeId);
+
+      // Clean up incoming edges
+      const incoming = this.graph.inEdges.get(nodeId) || [];
+      for (const edge of incoming) {
+        const sourceOutEdges = this.graph.edges.get(edge.source);
+        if (sourceOutEdges) {
+          this.graph.edges.set(
+            edge.source,
+            sourceOutEdges.filter((e) => e.target !== nodeId)
+          );
+        }
+      }
+      this.graph.inEdges.delete(nodeId);
+
+      // Clean up node and its indexes
+      const node = this.graph.nodes.get(nodeId);
+      if (node) {
+        if (this._byName.has(node.name)) {
+          this._byName.get(node.name)!.delete(nodeId);
+          if (this._byName.get(node.name)!.size === 0) {
+            this._byName.delete(node.name);
+          }
+        }
+        this._byFileAndName.delete(`${filePath}:${node.name}`);
+        this.graph.nodes.delete(nodeId);
+      }
+    }
+  }
+
   public ensureModuleNode(moduleName: string): string {
     const nodeId = `module:${moduleName}`;
     if (!this.graph.nodes.has(nodeId)) {
-        const node: GraphNode = {
-            id: nodeId,
-            type: 'module',
-            name: moduleName,
-            startLine: 0,
-            endLine: 0,
-            documentation: '',
-            codeSnippet: '',
-        };
-        this.addNode(node);
+      const node: GraphNode = {
+        id: nodeId,
+        type: 'module',
+        name: moduleName,
+        startLine: 0,
+        endLine: 0,
+        documentation: '',
+        codeSnippet: '',
+      };
+      this.addNode(node);
     }
     return nodeId;
   }
 
-  public addPendingCall(filePath: string, sourceId: string, calleeName: string) {
+  public addPendingCall(
+    filePath: string,
+    sourceId: string,
+    calleeName: string
+  ) {
     this._pendingCalls.push([filePath, sourceId, calleeName]);
   }
 

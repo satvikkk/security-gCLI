@@ -19,3 +19,22 @@ export interface GraphEdge {
   target: string;
   type: string;
 }
+export interface SymbolSearchResult {
+  name: string;
+  type: string;
+  filePath: string;
+  location: {
+    startLine: number;
+    endLine: number;
+  };
+  score: number;
+}
+
+export interface SymbolDetails extends GraphNode {
+  relationships: {
+    parentClasses: GraphNode[];
+    callees: GraphNode[];
+    callers: GraphNode[];
+    children: GraphNode[];
+  };
+}

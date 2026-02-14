@@ -127,6 +127,128 @@ server.tool(
 );
 
 server.tool(
+  'search_symbol',
+  'Fuzzy match symbol names.',
+  {
+    query: z.string().describe('The symbol to search for.'),
+    type_filter: z.string().optional().describe('Optional filter for symbol type.'),
+  } as any,
+  async (input: { query: string; type_filter?: string }) => {
+    const results = graphService.searchSymbol(input.query, input.type_filter);
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(results, null, 2),
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  'get_symbol_details',
+  'Read a symbol without reading the whole file.',
+  {
+    symbol: z.string().describe('The name of the symbol.'),
+    file_path: z.string().optional().describe('Optional file path to resolve ambiguity.'),
+  } as any,
+  async (input: { symbol: string; file_path?: string }) => {
+    const details = graphService.getSymbolDetails(input.symbol, input.file_path);
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(details, null, 2),
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  'find_references',
+  'Finds all callers of a symbol.',
+  {
+    symbol: z.string().describe('The name of the symbol.'),
+    file_path: z.string().optional().describe('Optional file path to resolve ambiguity.'),
+  } as any,
+  async (input: { symbol: string; file_path?: string }) => {
+    const references = graphService.findReferences(input.symbol, input.file_path);
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(references, null, 2),
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  'get_file_structure',
+  'Get a high-level map of a file.',
+  {
+    file_path: z.string().describe('The path to the file.'),
+  } as any,
+  async (input: { file_path: string }) => {
+    const structure = graphService.getFileStructure(input.file_path);
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(structure, null, 2),
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  'get_outgoing_dependencies',
+  'Understand what a file needs.',
+  {
+    file_path: z.string().describe('The path to the file.'),
+  } as any,
+  async (input: { file_path: string }) => {
+    const dependencies = graphService.getOutgoingDependencies(input.file_path);
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(dependencies, null, 2),
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  'refresh_index',
+  'Notify tool of changed files.',
+  {
+    files: z.array(z.string()).describe('List of files to re-index.'),
+  } as any,
+  async (input: { files: string[] }) => {
+    const GEMINI_SECURITY_DIR = path.join(process.cwd(), '.gemini_security');
+    for (const file of input.files) {
+      graphService.clearFile(file);
+      await graphBuilder.buildGraph(file);
+    }
+    await graphService.saveGraph(GEMINI_SECURITY_DIR);
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify({ success: true }),
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
   'find_line_numbers',
   'Finds the line numbers of a code snippet in a file.',
   {
