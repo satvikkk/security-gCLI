@@ -51,6 +51,27 @@ const graphService = new GraphService();
 const graphBuilder = new GraphBuilder(graphService);
 let graphBuilt = false;
 
+async function ensureGraphReady() {
+  if (graphBuilt) {
+    return;
+  }
+
+  const GEMINI_SECURITY_DIR = path.join(process.cwd(), '.gemini_security');
+  const loaded = await graphService.loadGraph(GEMINI_SECURITY_DIR);
+  if (!loaded) {
+    const files = await scan_dir(process.cwd());
+    for (const file of files) {
+      try {
+        await graphBuilder.buildGraph(file);
+      } catch (e: any) {
+        // Ignore errors for unsupported file types
+      }
+    }
+    await graphService.saveGraph(GEMINI_SECURITY_DIR);
+  }
+  graphBuilt = true;
+}
+
 server.tool(
   'get_enclosing_entity',
   'Get the nearest enclosing node (function/class) details (name, type, range).',
@@ -82,23 +103,7 @@ server.tool(
 
     const absoluteFilePath = path.resolve(process.cwd(), sanitizedFilePath);
 
-    const GEMINI_SECURITY_DIR = path.join(process.cwd(), '.gemini_security');
-
-    if (!graphBuilt) {
-      const loaded = await graphService.loadGraph(GEMINI_SECURITY_DIR);
-      if (!loaded) {
-        const files = await scan_dir(process.cwd());
-        for (const file of files) {
-          try {
-            await graphBuilder.buildGraph(file);
-          } catch (e: any) {
-            // Ignore errors for unsupported file types
-          }
-        }
-        await graphService.saveGraph(GEMINI_SECURITY_DIR);
-      }
-      graphBuilt = true;
-    }
+    await ensureGraphReady();
 
     const entity = graphService.findEnclosingEntity(absoluteFilePath, line);
 
@@ -134,6 +139,7 @@ server.tool(
     type_filter: z.string().optional().describe('Optional filter for symbol type.'),
   } as any,
   async (input: { query: string; type_filter?: string }) => {
+    await ensureGraphReady();
     const results = graphService.searchSymbol(input.query, input.type_filter);
     return {
       content: [
@@ -154,6 +160,7 @@ server.tool(
     file_path: z.string().optional().describe('Optional file path to resolve ambiguity.'),
   } as any,
   async (input: { symbol: string; file_path?: string }) => {
+    await ensureGraphReady();
     const details = graphService.getSymbolDetails(input.symbol, input.file_path);
     return {
       content: [
@@ -174,6 +181,7 @@ server.tool(
     file_path: z.string().optional().describe('Optional file path to resolve ambiguity.'),
   } as any,
   async (input: { symbol: string; file_path?: string }) => {
+    await ensureGraphReady();
     const references = graphService.findReferences(input.symbol, input.file_path);
     return {
       content: [
@@ -193,6 +201,7 @@ server.tool(
     file_path: z.string().describe('The path to the file.'),
   } as any,
   async (input: { file_path: string }) => {
+    await ensureGraphReady();
     const structure = graphService.getFileStructure(input.file_path);
     return {
       content: [
@@ -212,6 +221,7 @@ server.tool(
     file_path: z.string().describe('The path to the file.'),
   } as any,
   async (input: { file_path: string }) => {
+    await ensureGraphReady();
     const dependencies = graphService.getOutgoingDependencies(input.file_path);
     return {
       content: [
@@ -231,6 +241,7 @@ server.tool(
     files: z.array(z.string()).describe('List of files to re-index.'),
   } as any,
   async (input: { files: string[] }) => {
+    await ensureGraphReady();
     const GEMINI_SECURITY_DIR = path.join(process.cwd(), '.gemini_security');
     for (const file of input.files) {
       graphService.clearFile(file);
