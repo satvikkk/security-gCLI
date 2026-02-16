@@ -61,7 +61,42 @@ Instead of relying strictly on LLM text-transformers, we implement a Graph Neura
 
 ---
 
-## Implementation Next Steps
-To build the "Intent-to-Structure" bridge, the immediate next step for the `mcp-server` is implementing **Strategy 1**. 
+## Implementation Guide for Strategy 1 (Text-Augmented Neighborhoods)
 
-The backend should be updated to maintain a local vector store (e.g., using a lightweight local SQLite-VSS or simple cosine similarity array). When calculating the graph, it must generate Neighborhood-Augmented text blurbs for every node and vectorize them, exposing a new MCP Tool: `semantic_search_nodes(query_string)` that returns the optimal `node_id` starting points.
+For the coding agent taking this up, here is the exact step-by-step implementation plan to add Semantic Search to the `codemaps` MCP Server:
+
+### Phase 1: Storage and Embedding Preparation
+1.  **Add Dependencies:** Add a lightweight local vector store (e.g., `sqlite-vss`, `chromadb`, or a simple memory-based cosine similarity array if dependencies must be kept minimal) and an embedding client (e.g., `@google/genai` or `openai` depending on the user's preferred LLM provider) to `mcp-server/package.json`.
+2.  **Initialize Vector Store:** Create a `VectorService` class (similar to `GraphService`) that initializes the local DB upon server start. It should expose methods for `upsert_embedding(id, vector)` and `query_similar(vector, k=5)`.
+
+### Phase 2: Neighborhood Synthesis
+1.  **Intercept Graph Building:** Inside `GraphBuilder` (or wherever nodes are finalized), after all parsing is complete and structural edges are established, iterate over every node in the graph.
+2.  **Synthesize Meta-Text:** For each node, generate the "Text-Augmented Neighborhood" payload.
+    *   Find all *incoming* edges (e.g., who calls this node). Map these back to human-readable source file paths.
+    *   Find all *outgoing* edges (e.g., who this node calls). Map these back to target file paths.
+    *   Combine this into a strictly formatted string:
+        ```text
+        Node ID: <node.id>
+        Type: <node.type>
+        File: <file path>
+        Called By: <comma-separated list of incoming dependency files>
+        Calls Out To: <comma-separated list of outgoing dependency files>
+        
+        Snippet:
+        <node.codeSnippet>
+        ```
+
+### Phase 3: Embedding and Registration
+1.  **Vectorize:** Send the synthesized Meta-Text string to the embedding API to generate the dense vector representation.
+2.  **Store:** Save the `<node.id>` and its corresponding vector into the `VectorService`.
+
+### Phase 4: MCP Tool Exposure
+1.  **Create `semantic_search_nodes` Tool:** In `mcp-server/src/index.ts`, register a new MCP tool named `semantic_search_nodes`.
+    *   **Arguments:** `{ query: string, top_k?: number }`
+    *   **Description:** "Translates a natural language task intent into the best underlying structural root nodes for further graph traversal."
+2.  **Execution Logic:**
+    *   Embed the user's `query`.
+    *   Query the `VectorService` for the top *k* nearest vectors.
+    *   Return the corresponding `node_id` strings, along with their names and file paths, back to the MCP Client.
+
+This implementation successfully bridges the intent-to-structure gap, allowing the agent to use `semantic_search_nodes("fix 2FA bypass")`, receive `src/auth/2fa.ts:validateOTP` as the top result, and immediately proceed to advanced structural tools like `get_call_chain_to()` or `analyze_refactor_impact()`.
