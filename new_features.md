@@ -56,3 +56,29 @@ These are the proposed features to track in the `mcp-server` roadmap:
 *   **Proposed MCP Tool:** `find_isolated_components(directory_path)`
 *   **Behavior:** The backend algorithm identifies structural nodes inside the given directory that have absolutely 0 incoming structural edges (excluding expected uncalled roots like `index.ts` or exported hooks).
 *   **Agent Utility:** The agent can instantly list internally defined helper functions or deprecated legacy classes that are no longer referenced anywhere and propose them for safe deletion.
+
+---
+
+## 7. Taint Tracking & Data Flow Analysis (The "Pathfinding" Tool)
+**Goal:** Trace data flow from untrusted input to sensitive downstream sinks.
+
+*   **Graph Technique:** Shortest Path / Breadth-First Search (BFS)
+*   **Proposed MCP Tool:** `find_path(source_node_id, target_node_id)`
+*   **Behavior:** Finds the shortest structural control-flow chain between an entry point (e.g., `handleRequest`) and a sink (e.g., `db.execute()`).
+*   **Agent Utility:** Instead of manually searching step-by-step from an API endpoint, the agent instantly gets the exact line-by-line route data takes, allowing it to easily see if the data is sanitized along the way without getting lost in the noise.
+
+## 8. Attack Surface Mapping (The "Trust Boundary" Tool)
+**Goal:** Allow the LLM to instantly map the edges of the application's trust boundary.
+
+*   **Graph Technique:** Graph Filtering & Slicing
+*   **Proposed MCP Tool:** `map_attack_surface()`
+*   **Behavior:** Filters the graph to return nodes matching specific structural patterns representing boundaries (e.g., "Find all `function` nodes that have an `imports` edge from a routing library like Express, but NO `calls` edge to safety middleware").
+*   **Agent Utility:** The LLM can query the architecture structurally instead of syntactically, massively accelerating zero-day vulnerability hunting by isolating and reviewing only the truly exposed entry points.
+
+## 9. Centrality & Core Logic Identification (The "PageRank" Tool)
+**Goal:** Instantly identify the most highly-coupled and critical infrastructure files in a repository.
+
+*   **Graph Technique:** PageRank / In-Degree Centrality Computing
+*   **Proposed MCP Tool:** `get_core_components()`
+*   **Behavior:** The backend computes the in-degree or PageRank of every class/function in the graph. Nodes with massive amounts of incoming `calls` edges are returned as a ranked list.
+*   **Agent Utility:** When dropped into a massive unknown codebase, an agent can instantly be told "These 3 files are the central nervous system of the repository" to prioritize orientation and direct security audits toward the most impactful dependencies.
