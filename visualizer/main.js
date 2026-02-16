@@ -105,6 +105,36 @@ function initCy() {
                 style: { 'background-color': '#10b981', 'shape': 'ellipse' }
             },
             {
+                selector: 'node[type="function"]:parent, node[type="method"]:parent',
+                style: {
+                    'background-color': 'rgba(16, 185, 129, 0.15)', // Tinted green background
+                    'border-color': '#10b981',
+                    'border-width': 2,
+                    'border-style': 'dashed',
+                    'shape': 'round-rectangle',
+                    'text-valign': 'top',
+                    'text-halign': 'center',
+                    'padding': 15,
+                    'text-margin-y': -8,
+                    'text-background-opacity': 0 // remove text bg for compound titles
+                }
+            },
+            {
+                selector: 'node[type="class"]:parent, node[type="interface"]:parent',
+                style: {
+                    'background-color': 'rgba(245, 158, 11, 0.15)', // Tinted orange background
+                    'border-color': '#f59e0b',
+                    'border-width': 2,
+                    'border-style': 'dashed',
+                    'shape': 'round-rectangle',
+                    'text-valign': 'top',
+                    'text-halign': 'center',
+                    'padding': 15,
+                    'text-margin-y': -8,
+                    'text-background-opacity': 0 // remove text bg for compound titles
+                }
+            },
+            {
                 selector: 'node[type="variable"]',
                 style: { 'background-color': '#8b5cf6', 'shape': 'round-rectangle', 'width': 20, 'height': 20, 'padding': 10 }
             },
@@ -227,14 +257,17 @@ function initCy() {
             node.descendants().removeClass('dimmed').addClass('highlighted');
         }
 
-        // If it's a child node, make sure its parent container stays visible
+        // If it's a child node, make sure ALL its parent containers stay visible
         if (node.isChild()) {
-            node.parent().removeClass('dimmed').addClass('highlighted');
+            node.ancestors().removeClass('dimmed').addClass('highlighted');
         }
 
         const connectedEdges = node.connectedEdges();
         connectedEdges.removeClass('dimmed').addClass('highlighted');
-        connectedEdges.connectedNodes().removeClass('dimmed').addClass('highlighted');
+        const connectedNodes = connectedEdges.connectedNodes();
+        connectedNodes.removeClass('dimmed').addClass('highlighted');
+        connectedNodes.descendants().removeClass('dimmed').addClass('highlighted');
+        connectedNodes.ancestors().removeClass('dimmed').addClass('highlighted');
 
         applyFilters();
     });
@@ -272,6 +305,15 @@ function loadGraphData(data) {
                 },
                 classes: 'compound-file'
             });
+        }
+    });
+
+    // Create a parent-child mapping using the structural 'contains' edges from the AST
+    const parentMap = new Map();
+    data.edges.forEach(e => {
+        if (e.type === 'contains') {
+            // target is the child, source is the parent scope
+            parentMap.set(e.target, e.source);
         }
     });
 
@@ -323,7 +365,12 @@ function loadGraphData(data) {
         }
 
         const filePathStr = n.id.split(':')[0];
-        const parentId = filePaths.has(filePathStr) ? filePathStr : null;
+        // Multi-level hierarchy: First try to use the direct structural parent from AST
+        let parentId = parentMap.get(n.id);
+        // Fallback to the file container if no structural parent exists
+        if (!parentId) {
+            parentId = filePaths.has(filePathStr) ? filePathStr : null;
+        }
 
         // Truncate inner labels as well
         const nodeParts = n.id.split(/[:\/\\]/);
