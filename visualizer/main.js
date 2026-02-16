@@ -392,6 +392,7 @@ function loadGraphData(data) {
         });
     });
 
+    const seenEdges = new Set();
     data.edges.forEach((e, i) => {
         // Reroute edges pointing to internal modules directly to the matched file nodes
         let targetId = e.target;
@@ -419,6 +420,13 @@ function loadGraphData(data) {
         if (sourceId === targetId) {
             return;
         }
+
+        // Deduplicate edges (prevent multiple identical lines drawing between the same two nodes)
+        const edgeSignature = `${sourceId}->${targetId}`;
+        if (seenEdges.has(edgeSignature)) {
+            return;
+        }
+        seenEdges.add(edgeSignature);
 
         elements.push({
             data: {
