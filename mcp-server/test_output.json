@@ -1,0 +1,14 @@
+
+================================
+🚀 STANDALONE CODEMAPS SCANNER   
+================================
+Target Dir: /Users/krishab/Research/cli-security/satvik_fork/security-gCLI/mcp-server/src
+Output Dir: /Users/krishab/Research/cli-security/satvik_fork/security-gCLI/mcp-server/.gemini_security
+Found 19 supported files. Parsing...
+
+✅ Graph built successfully! Parsed 19/19 files.
+Nodes: 406 | Edges: 72
+
+💾 Saved codemap.json to: /Users/krishab/Research/cli-security/satvik_fork/security-gCLI/mcp-server/.gemini_security
+
+🚀 Also exported static graph payload to: /Users/krishab/Research/cli-security/satvik_fork/security-gCLI/visualizer/data.js
