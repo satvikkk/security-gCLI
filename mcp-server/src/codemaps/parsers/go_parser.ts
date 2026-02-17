@@ -96,8 +96,16 @@ export class GoParser implements LanguageParser {
         }
 
         if (moduleName) {
-          const targetId = this.graphService.ensureModuleNode(moduleName);
-          this.graphService.addEdge({ source: filePath, target: targetId, type: 'imports' });
+          const targetId = this.graphService.resolveModuleId(
+            moduleName,
+            filePath,
+            'go'
+          );
+          this.graphService.addEdge({
+            source: filePath,
+            target: targetId,
+            type: 'imports',
+          });
         }
       }
     }

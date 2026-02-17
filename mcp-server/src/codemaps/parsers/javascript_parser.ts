@@ -170,7 +170,7 @@ export class JavaScriptParser implements LanguageParser {
         if (moduleName.length >= 2 && (moduleName.startsWith("'") || moduleName.startsWith('"'))) {
           moduleName = moduleName.slice(1, -1);
         }
-        const targetId = this.graphService.ensureModuleNode(moduleName);
+        const targetId = this.graphService.resolveModuleId(moduleName, filePath);
         this.graphService.addEdge({ source: filePath, target: targetId, type: 'imports' });
       }
     }
@@ -273,7 +273,7 @@ export class JavaScriptParser implements LanguageParser {
       if (moduleName.length >= 2 && (moduleName.startsWith("'") || moduleName.startsWith('"'))) {
         moduleName = moduleName.slice(1, -1);
       }
-      const targetId = this.graphService.ensureModuleNode(moduleName);
+      const targetId = this.graphService.resolveModuleId(moduleName, filePath);
       this.graphService.addEdge({ source: filePath, target: targetId, type: 'imports' });
       return true;
     }
@@ -285,7 +285,7 @@ export class JavaScriptParser implements LanguageParser {
         if (moduleName.length >= 2 && moduleName.startsWith('`') && moduleName.endsWith('`')) {
           moduleName = moduleName.slice(1, -1);
         }
-        const targetId = this.graphService.ensureModuleNode(moduleName);
+        const targetId = this.graphService.resolveModuleId(moduleName, filePath);
         this.graphService.addEdge({ source: filePath, target: targetId, type: 'imports' });
         return true;
       }

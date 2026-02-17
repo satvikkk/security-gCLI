@@ -22,6 +22,10 @@ export class GraphService {
   private _byName: Map<string, Set<string>>;
   private _byFileAndName: Map<string, string>;
   public _pendingCalls: [string, string, string][];
+  private _fileManifest: Set<string> = new Set();
+  private _pathAliases: { alias: string; path: string }[] = [];
+  private _projectRoot = '';
+  private _goModuleName: string | null = null;
 
   constructor() {
     this.graph = {
@@ -32,6 +36,202 @@ export class GraphService {
     this._byName = new Map();
     this._byFileAndName = new Map();
     this._pendingCalls = [];
+  }
+
+  public async initialize(projectRoot: string) {
+    this._projectRoot = projectRoot;
+    await this._buildFileManifest(projectRoot);
+    await this._loadTsConfigAliases(projectRoot);
+    await this._loadGoModuleInfo(projectRoot);
+  }
+
+  private async _buildFileManifest(dir: string) {
+    const dirents = await fs.readdir(dir, { withFileTypes: true });
+    for (const dirent of dirents) {
+      const res = path.resolve(dir, dirent.name);
+      if (dirent.name === 'node_modules' || dirent.name === '.git') {
+        continue;
+      }
+      if (dirent.isDirectory()) {
+        await this._buildFileManifest(res);
+      } else {
+        if (
+          res.endsWith('.ts') ||
+          res.endsWith('.tsx') ||
+          res.endsWith('.js') ||
+          res.endsWith('.py') ||
+          res.endsWith('.go')
+        ) {
+          this._fileManifest.add(res);
+        }
+      }
+    }
+  }
+
+  private async _loadTsConfigAliases(projectRoot: string) {
+    try {
+      const tsConfigPath = path.join(projectRoot, 'tsconfig.json');
+      const tsConfigContent = await fs.readFile(tsConfigPath, 'utf8');
+      let tsConfig;
+      try {
+        const jsonc = tsConfigContent.replace(
+          /\/\*[\s\S]*?\*\/|([^\\:]|^)\/\/.*$/gm,
+          '$1'
+        );
+        tsConfig = JSON.parse(jsonc);
+      } catch (e) {
+        console.error(
+          `Error parsing tsconfig.json at ${tsConfigPath}. It might be invalid JSONC.`
+        );
+        return;
+      }
+      const paths = tsConfig.compilerOptions?.paths;
+      if (paths) {
+        const baseUrl = tsConfig.compilerOptions?.baseUrl || '.';
+        for (const alias in paths) {
+          const aliasPath = paths[alias][0];
+          const cleanAlias = alias.endsWith('/*') ? alias.slice(0, -2) : alias;
+          const cleanPath = aliasPath.endsWith('/*')
+            ? aliasPath.slice(0, -2)
+            : aliasPath;
+          this._pathAliases.push({
+            alias: cleanAlias,
+            path: path.resolve(projectRoot, baseUrl, cleanPath),
+          });
+        }
+        this._pathAliases.sort((a, b) => b.alias.length - a.alias.length);
+      }
+    } catch (error) {
+      // It's okay if tsconfig.json doesn't exist.
+    }
+  }
+
+  private async _loadGoModuleInfo(projectRoot: string) {
+    try {
+      const goModPath = path.join(projectRoot, 'go.mod');
+      const goModContent = await fs.readFile(goModPath, 'utf8');
+      const match = goModContent.match(/^module\s+([^\s]+)/m);
+      if (match) {
+        this._goModuleName = match[1];
+      }
+    } catch (error) {
+      // It's okay if go.mod doesn't exist.
+    }
+  }
+
+  public resolveModuleId(
+    moduleName: string,
+    containingFilePath: string,
+    language: string
+  ): string {
+    let resolvedPath: string | null = null;
+    let fileId: string | null = null;
+
+    switch (language) {
+      case 'typescript':
+      case 'javascript':
+        for (const { alias, path: aliasPath } of this._pathAliases) {
+          if (moduleName.startsWith(alias)) {
+            resolvedPath = path.join(
+              aliasPath,
+              moduleName.substring(alias.length)
+            );
+            fileId = this._findFileInManifest(resolvedPath, language);
+            if (fileId) return fileId;
+          }
+        }
+        if (moduleName.startsWith('./') || moduleName.startsWith('../')) {
+          resolvedPath = path.resolve(
+            path.dirname(containingFilePath),
+            moduleName
+          );
+          fileId = this._findFileInManifest(resolvedPath, language);
+          if (fileId) return fileId;
+        }
+        break;
+
+      case 'go':
+        if (this._goModuleName && moduleName.startsWith(this._goModuleName)) {
+          const subPath = moduleName.substring(this._goModuleName.length);
+          resolvedPath = path.join(this._projectRoot, subPath);
+          fileId = this._findFileInManifest(resolvedPath, language);
+          if (fileId) return fileId;
+        }
+        break;
+
+      case 'python':
+        const pyPath = moduleName.replace(/\./g, '/');
+        // Check relative to project root
+        resolvedPath = path.join(this._projectRoot, pyPath);
+        fileId = this._findFileInManifest(resolvedPath, language);
+        if (fileId) return fileId;
+
+        // Check relative to current file (for imports like `from . import ...`)
+        if (moduleName.startsWith('.')) {
+            let tempResolvedPath = path.resolve(path.dirname(containingFilePath), pyPath.substring(1));
+            fileId = this._findFileInManifest(tempResolvedPath, language);
+            if (fileId) return fileId;
+        }
+        break;
+    }
+
+    return this.ensureModuleNode(moduleName);
+  }
+
+  private _findFileInManifest(
+    resolvedPath: string,
+    language: string
+  ): string | null {
+    const extensions = this._getExtensionsForLanguage(language);
+    const indexNames = this._getIndexNamesForLanguage(language);
+
+    if (this._fileManifest.has(resolvedPath)) {
+      return resolvedPath;
+    }
+
+    for (const ext of extensions) {
+      const fullPath = `${resolvedPath}${ext}`;
+      if (this._fileManifest.has(fullPath)) {
+        return fullPath;
+      }
+    }
+
+    for (const indexName of indexNames) {
+      const indexPath = path.join(resolvedPath, indexName);
+      if (this._fileManifest.has(indexPath)) {
+        return indexPath;
+      }
+    }
+
+    return null;
+  }
+
+  private _getExtensionsForLanguage(language: string): string[] {
+    switch (language) {
+      case 'typescript':
+        return ['.ts', '.tsx'];
+      case 'javascript':
+        return ['.js'];
+      case 'python':
+        return ['.py'];
+      case 'go':
+        return ['.go'];
+      default:
+        return [];
+    }
+  }
+
+  private _getIndexNamesForLanguage(language: string): string[] {
+    switch (language) {
+      case 'typescript':
+        return ['index.ts', 'index.tsx'];
+      case 'javascript':
+        return ['index.js'];
+      case 'python':
+        return ['__init__.py'];
+      default:
+        return [];
+    }
   }
 
   private _indexNode(nodeId: string, nodeData: GraphNode) {

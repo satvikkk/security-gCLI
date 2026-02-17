@@ -22,6 +22,9 @@ describe('GraphBuilder', () => {
   beforeEach(() => {
     graphService = new GraphService();
     graphBuilder = new GraphBuilder(graphService);
+    // Bypass project root finding and initialization for unit tests
+    (graphBuilder as any).isInitialized = true;
+    (graphBuilder as any).projectRoot = '.';
   });
 
   it('should build a graph for a Python file', async () => {

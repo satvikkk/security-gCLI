@@ -91,7 +91,7 @@ export class PythonParser implements LanguageParser {
         for (const alias of node.namedChildren) {
             if (alias.type === 'dotted_name') {
                 const moduleName = alias.text;
-                const targetId = this.graphService.ensureModuleNode(moduleName);
+                const targetId = this.graphService.resolveModuleId(moduleName, filePath, 'python');
                 this.graphService.addEdge({ source: filePath, target: targetId, type: 'imports' });
             }
         }
@@ -99,7 +99,7 @@ export class PythonParser implements LanguageParser {
         const moduleNameNode = node.childForFieldName('module_name');
         if (moduleNameNode) {
             const moduleName = moduleNameNode.text;
-            const targetId = this.graphService.ensureModuleNode(moduleName);
+            const targetId = this.graphService.resolveModuleId(moduleName, filePath, 'python');
             this.graphService.addEdge({ source: filePath, target: targetId, type: 'imports' });
         }
     }

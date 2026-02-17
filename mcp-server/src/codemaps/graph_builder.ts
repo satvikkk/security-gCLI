@@ -13,6 +13,7 @@ import { GoParser } from './parsers/go_parser.js';
 import { TypeScriptParser } from './parsers/typescript_parser.js';
 import { LanguageParser } from './parsers/base_parser.js';
 import { promises as fs } from 'fs';
+import path from 'path';
 import Python from 'tree-sitter-python';
 import JavaScript from 'tree-sitter-javascript';
 import Go from 'tree-sitter-go';
@@ -22,6 +23,8 @@ export class GraphBuilder {
   private parser!: Parser;
   private languageParsers: { [key: string]: LanguageParser };
   private languages: { [key: string]: object };
+  private isInitialized = false;
+  private projectRoot: string | null = null;
     constructor(private graphService: GraphService) {
       this.languageParsers = {
         python: new PythonParser(graphService),
@@ -38,6 +41,11 @@ export class GraphBuilder {
     }
 
     public async buildGraph(filePath: string) {
+      if (!this.isInitialized) {
+        await this._findAndSetProjectRoot(filePath);
+        await this.graphService.initialize(this.projectRoot!);
+        this.isInitialized = true;
+      }
       const language = this._getLanguageFromFileExtension(filePath);
       const languageMapping = this.languages[language];
     if (!languageMapping) {
@@ -62,6 +70,31 @@ export class GraphBuilder {
     const languageParser = this.languageParsers[language];
     this._traverseTree(tree.rootNode, languageParser, filePath, filePath);
     return this.graphService.graph;
+  }
+
+
+  private async _findAndSetProjectRoot(startPath: string): Promise<void> {
+    let currentPath = path.dirname(startPath);
+    const rootMarkers = [
+      'package.json',
+      '.git',
+      'go.mod',
+      'pyproject.toml',
+      'requirements.txt',
+    ];
+    while (currentPath !== path.dirname(currentPath)) {
+      for (const marker of rootMarkers) {
+        try {
+          await fs.access(path.join(currentPath, marker));
+          this.projectRoot = currentPath;
+          return;
+        } catch (e) {
+          // Ignore and continue
+        }
+      }
+      currentPath = path.dirname(currentPath);
+    }
+    throw new Error(`Could not determine project root from ${startPath}.`);
   }
 
   private _traverseTree(node: Parser.SyntaxNode, languageParser: LanguageParser, filePath: string, scope: string) {
