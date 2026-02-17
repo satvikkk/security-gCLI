@@ -189,6 +189,20 @@ export class GraphService {
       return resolvedPath;
     }
 
+    if (
+      (language === 'typescript' || language === 'javascript') &&
+      resolvedPath.endsWith('.js')
+    ) {
+      const tsPath = resolvedPath.slice(0, -3) + '.ts';
+      if (this._fileManifest.has(tsPath)) {
+        return tsPath;
+      }
+      const tsxPath = resolvedPath.slice(0, -3) + '.tsx';
+      if (this._fileManifest.has(tsxPath)) {
+        return tsxPath;
+      }
+    }
+
     for (const ext of extensions) {
       const fullPath = `${resolvedPath}${ext}`;
       if (this._fileManifest.has(fullPath)) {

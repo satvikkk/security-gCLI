@@ -292,7 +292,7 @@ export class TypeScriptParser implements LanguageParser {
         if (moduleName.length >= 2 && (moduleName.startsWith("'") || moduleName.startsWith('"'))) {
           moduleName = moduleName.slice(1, -1);
         }
-        const targetId = this.graphService.resolveModuleId(moduleName, filePath);
+        const targetId = this.graphService.resolveModuleId(moduleName, filePath, 'typescript');
         this.graphService.addEdge({ source: filePath, target: targetId, type: 'imports' });
       }
     }
@@ -376,7 +376,7 @@ export class TypeScriptParser implements LanguageParser {
     if (mod === null) {
       return false;
     }
-    const targetId = this.graphService.resolveModuleId(mod, filePath);
+    const targetId = this.graphService.resolveModuleId(mod, filePath, 'typescript');
     this.graphService.addEdge({ source: filePath, target: targetId, type: 'imports' });
     return true;
   }

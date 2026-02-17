@@ -170,7 +170,7 @@ export class JavaScriptParser implements LanguageParser {
         if (moduleName.length >= 2 && (moduleName.startsWith("'") || moduleName.startsWith('"'))) {
           moduleName = moduleName.slice(1, -1);
         }
-        const targetId = this.graphService.resolveModuleId(moduleName, filePath);
+        const targetId = this.graphService.resolveModuleId(moduleName, filePath, 'javascript');
         this.graphService.addEdge({ source: filePath, target: targetId, type: 'imports' });
       }
     }
@@ -273,11 +273,11 @@ export class JavaScriptParser implements LanguageParser {
       if (moduleName.length >= 2 && (moduleName.startsWith("'") || moduleName.startsWith('"'))) {
         moduleName = moduleName.slice(1, -1);
       }
-      const targetId = this.graphService.resolveModuleId(moduleName, filePath);
+      const targetId = this.graphService.resolveModuleId(moduleName, filePath, 'javascript');
       this.graphService.addEdge({ source: filePath, target: targetId, type: 'imports' });
       return true;
     }
-
+    
     if (first.type === 'template_string') {
       const raw = first.text;
       if (!raw.includes('${')) {
@@ -285,7 +285,7 @@ export class JavaScriptParser implements LanguageParser {
         if (moduleName.length >= 2 && moduleName.startsWith('`') && moduleName.endsWith('`')) {
           moduleName = moduleName.slice(1, -1);
         }
-        const targetId = this.graphService.resolveModuleId(moduleName, filePath);
+        const targetId = this.graphService.resolveModuleId(moduleName, filePath, 'javascript');
         this.graphService.addEdge({ source: filePath, target: targetId, type: 'imports' });
         return true;
       }
