@@ -329,8 +329,11 @@ export class GraphService {
     typeFilter?: string
   ): SymbolSearchResult[] {
     const results: SymbolSearchResult[] = [];
+    const normalizedQuery = query.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+
     for (const [name, nodeIds] of this._byName.entries()) {
-      if (name.toLowerCase().includes(query.toLowerCase())) {
+      const normalizedName = name.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      if (normalizedName.includes(normalizedQuery)) {
         for (const nodeId of nodeIds) {
           const node = this.graph.nodes.get(nodeId);
           if (node) {
