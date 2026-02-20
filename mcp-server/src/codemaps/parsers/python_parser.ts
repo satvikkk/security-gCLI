@@ -12,98 +12,141 @@ import { LanguageParser } from './base_parser.js';
 export class PythonParser implements LanguageParser {
   constructor(public graphService: GraphService) {}
 
-  parse(node: SyntaxNode, filePath: string, scope: string): string {
+  parse(
+    node: SyntaxNode,
+    filePath: string,
+    scope: string,
+    declarationOnly: boolean
+  ): string {
     let newScope = scope;
-    if (node.type === 'function_definition') {
-      const nameNode = node.childForFieldName('name');
-      if (nameNode) {
-        const name = nameNode.text;
-        const startLine = node.startPosition.row + 1;
-        const endLine = node.endPosition.row + 1;
-        const documentation = this._getDocstring(node);
-        const codeSnippet = node.text;
-        const nodeId = `${scope}:${name}`;
-        
-        const newNode: GraphNode = {
-          id: nodeId,
-          type: 'function',
-          name,
-          startLine,
-          endLine,
-          documentation,
-          codeSnippet,
-        };
-        this.graphService.addNode(newNode);
-        newScope = nodeId;
-        if (scope) {
-          this.graphService.addEdge({ source: scope, target: nodeId, type: 'contains' });
-        }
-      }
-    } else if (node.type === 'class_definition') {
-      const nameNode = node.childForFieldName('name');
-      if (nameNode) {
-        const name = nameNode.text;
-        const startLine = node.startPosition.row + 1;
-        const endLine = node.endPosition.row + 1;
-        const documentation = this._getDocstring(node);
-        const codeSnippet = node.text;
-        const nodeId = `${scope}:${name}`;
 
-        const newNode: GraphNode = {
-          id: nodeId,
-          type: 'class',
-          name,
-          startLine,
-          endLine,
-          documentation,
-          codeSnippet,
-        };
-        this.graphService.addNode(newNode);
-        newScope = nodeId;
-        if (scope) {
-          this.graphService.addEdge({ source: scope, target: nodeId, type: 'contains' });
-        }
+    if (declarationOnly) {
+      if (node.type === 'function_definition') {
+        const nameNode = node.childForFieldName('name');
+        if (nameNode) {
+          const name = nameNode.text;
+          const startLine = node.startPosition.row + 1;
+          const endLine = node.endPosition.row + 1;
+          const documentation = this._getDocstring(node);
+          const codeSnippet = node.text;
+          const nodeId = `${scope}:${name}`;
 
-        const superclassesNode = node.childForFieldName('superclasses');
-        if (superclassesNode) {
-          for (const superclass of superclassesNode.children) {
-            if (superclass.type === 'identifier') {
-              const parentName = superclass.text;
-              const parentNode = this.graphService.querySymbol(parentName);
-              if (parentNode) {
-                this.graphService.addEdge({ source: nodeId, target: parentNode.id, type: 'inherits' });
+          const newNode: GraphNode = {
+            id: nodeId,
+            type: 'function',
+            name,
+            startLine,
+            endLine,
+            documentation,
+            codeSnippet,
+          };
+          this.graphService.addNode(newNode);
+          newScope = nodeId;
+          if (scope) {
+            this.graphService.addEdge({
+              source: scope,
+              target: nodeId,
+              type: 'contains',
+            });
+          }
+        }
+      } else if (node.type === 'class_definition') {
+        const nameNode = node.childForFieldName('name');
+        if (nameNode) {
+          const name = nameNode.text;
+          const startLine = node.startPosition.row + 1;
+          const endLine = node.endPosition.row + 1;
+          const documentation = this._getDocstring(node);
+          const codeSnippet = node.text;
+          const nodeId = `${scope}:${name}`;
+
+          const newNode: GraphNode = {
+            id: nodeId,
+            type: 'class',
+            name,
+            startLine,
+            endLine,
+            documentation,
+            codeSnippet,
+          };
+          this.graphService.addNode(newNode);
+          newScope = nodeId;
+          if (scope) {
+            this.graphService.addEdge({
+              source: scope,
+              target: nodeId,
+              type: 'contains',
+            });
+          }
+
+          const superclassesNode = node.childForFieldName('superclasses');
+          if (superclassesNode) {
+            for (const superclass of superclassesNode.children) {
+              if (superclass.type === 'identifier') {
+                const parentName = superclass.text;
+                const parentNode = this.graphService.querySymbol(parentName);
+                if (parentNode) {
+                  this.graphService.addEdge({
+                    source: nodeId,
+                    target: parentNode.id,
+                    type: 'inherits',
+                  });
+                }
               }
             }
           }
         }
       }
-    } else if (node.type === 'call') {
-        const calleeName = this._pyCalleeName(node);
-        if (calleeName && scope) {
-            const calleeNode = this.graphService.querySymbol(calleeName);
-            if (calleeNode) {
-                this.graphService.addEdge({ source: scope, target: calleeNode.id, type: 'calls' });
-            } else {
-                this.graphService.addPendingCall(filePath, scope, calleeName);
-            }
-        }
-    } else if (node.type === 'import_statement') {
-        for (const alias of node.namedChildren) {
-            if (alias.type === 'dotted_name') {
-                const moduleName = alias.text;
-                const targetId = this.graphService.resolveModuleId(moduleName, filePath, 'python');
-                this.graphService.addEdge({ source: filePath, target: targetId, type: 'imports' });
-            }
-        }
-    } else if (node.type === 'import_from_statement') {
-        const moduleNameNode = node.childForFieldName('module_name');
-        if (moduleNameNode) {
-            const moduleName = moduleNameNode.text;
-            const targetId = this.graphService.resolveModuleId(moduleName, filePath, 'python');
-            this.graphService.addEdge({ source: filePath, target: targetId, type: 'imports' });
-        }
+      return newScope;
     }
-    
+
+    if (node.type === 'call') {
+      const calleeName = this._pyCalleeName(node);
+      if (calleeName && scope) {
+        const calleeNode = this.graphService.querySymbol(calleeName);
+        if (calleeNode) {
+          this.graphService.addEdge({
+            source: scope,
+            target: calleeNode.id,
+            type: 'calls',
+          });
+        } else {
+          this.graphService.addPendingCall(filePath, scope, calleeName);
+        }
+      }
+    } else if (node.type === 'import_statement') {
+      for (const alias of node.namedChildren) {
+        if (alias.type === 'dotted_name') {
+          const moduleName = alias.text;
+          const targetId = this.graphService.resolveModuleId(
+            moduleName,
+            filePath,
+            'python'
+          );
+          this.graphService.addEdge({
+            source: filePath,
+            target: targetId,
+            type: 'imports',
+          });
+        }
+      }
+    } else if (node.type === 'import_from_statement') {
+      const moduleNameNode = node.childForFieldName('module_name');
+      if (moduleNameNode) {
+        const moduleName = moduleNameNode.text;
+        const targetId = this.graphService.resolveModuleId(
+          moduleName,
+          filePath,
+          'python'
+        );
+        this.graphService.addEdge({
+          source: filePath,
+          target: targetId,
+          type: 'imports',
+        });
+      }
+    }
+
     return newScope;
   }
 

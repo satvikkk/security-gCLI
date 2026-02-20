@@ -46,18 +46,29 @@ export class GraphBuilder {
         await this.graphService.initialize(this.projectRoot!);
         this.isInitialized = true;
       }
-      const language = this._getLanguageFromFileExtension(filePath);
-      const languageMapping = this.languages[language];
-    if (!languageMapping) {
-        throw new Error(`Unsupported language: ${language}`);
+
+      await this._declarationPass();
+      await this._resolutionPass();
+
+      this.graphService.processPendingCalls();
+      return this.graphService.graph;
     }
 
-    this.parser = new Parser();
-    this.parser.setLanguage(languageMapping);
+  private async _declarationPass() {
+    for (const filePath of this.graphService._fileManifest) {
+      const language = this._getLanguageFromFileExtension(filePath);
+      const languageMapping = this.languages[language];
+      if (!languageMapping) {
+        continue;
+      }
 
-    const fileContent = await fs.readFile(filePath, 'utf8');
-    const tree = this.parser.parse(fileContent);
-    const fileNode: GraphNode = {
+      this.parser = new Parser();
+      this.parser.setLanguage(languageMapping);
+
+      const fileContent = await fs.readFile(filePath, 'utf8');
+      const tree = this.parser.parse(fileContent);
+
+      const fileNode: GraphNode = {
         id: filePath,
         type: 'file',
         name: filePath,
@@ -65,11 +76,30 @@ export class GraphBuilder {
         endLine: 0,
         documentation: '',
         codeSnippet: '',
-    };
-    this.graphService.addNode(fileNode);
-    const languageParser = this.languageParsers[language];
-    this._traverseTree(tree.rootNode, languageParser, filePath, filePath);
-    return this.graphService.graph;
+      };
+      this.graphService.addNode(fileNode);
+      const languageParser = this.languageParsers[language];
+      this._traverseTree(tree.rootNode, languageParser, filePath, filePath, true);
+    }
+  }
+
+  private async _resolutionPass() {
+    for (const filePath of this.graphService._fileManifest) {
+      const language = this._getLanguageFromFileExtension(filePath);
+      const languageMapping = this.languages[language];
+      if (!languageMapping) {
+        continue;
+      }
+
+      this.parser = new Parser();
+      this.parser.setLanguage(languageMapping);
+
+      const fileContent = await fs.readFile(filePath, 'utf8');
+      const tree = this.parser.parse(fileContent);
+
+      const languageParser = this.languageParsers[language];
+      this._traverseTree(tree.rootNode, languageParser, filePath, filePath, false);
+    }
   }
 
 
@@ -97,10 +127,16 @@ export class GraphBuilder {
     throw new Error(`Could not determine project root from ${startPath}.`);
   }
 
-  private _traverseTree(node: Parser.SyntaxNode, languageParser: LanguageParser, filePath: string, scope: string) {
-    const newScope = languageParser.parse(node, filePath, scope);
+  private _traverseTree(
+    node: Parser.SyntaxNode,
+    languageParser: LanguageParser,
+    filePath: string,
+    scope: string,
+    declarationOnly = false
+  ) {
+    const newScope = languageParser.parse(node, filePath, scope, declarationOnly);
     for (const child of node.children) {
-      this._traverseTree(child, languageParser, filePath, newScope);
+      this._traverseTree(child, languageParser, filePath, newScope, declarationOnly);
     }
   }
 

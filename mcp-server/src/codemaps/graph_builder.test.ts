@@ -38,7 +38,7 @@ class MyClass:
     pass
 `;
     vi.mocked(fs.readFile).mockResolvedValue(fileContent);
-
+    graphService._fileManifest.add(filePath);
     await graphBuilder.buildGraph(filePath);
 
     expect(graphService.graph.nodes.has('test.py')).toBe(true);
@@ -59,7 +59,7 @@ class MyClass {
 }
 `;
     vi.mocked(fs.readFile).mockResolvedValue(fileContent);
-
+    graphService._fileManifest.add(filePath);
     await graphBuilder.buildGraph(filePath);
 
     expect(graphService.graph.nodes.has('test.js')).toBe(true);
@@ -80,7 +80,7 @@ class MyClass {
 }
 `;
     vi.mocked(fs.readFile).mockResolvedValue(fileContent);
-
+    graphService._fileManifest.add(filePath);
     await graphBuilder.buildGraph(filePath);
 
     expect(graphService.graph.nodes.has('test.ts')).toBe(true);
@@ -102,7 +102,7 @@ func (s *MyStruct) myMethod() {
 }
 `;
     vi.mocked(fs.readFile).mockResolvedValue(fileContent);
-
+    graphService._fileManifest.add(filePath);
     await graphBuilder.buildGraph(filePath);
 
     expect(graphService.graph.nodes.has('test.go')).toBe(true);
@@ -113,6 +113,9 @@ func (s *MyStruct) myMethod() {
 
   it('should throw an error for an unsupported file extension', async () => {
     const filePath = 'test.txt';
-    await expect(graphBuilder.buildGraph(filePath)).rejects.toThrow('Unsupported file extension: test.txt');
+    graphService._fileManifest.add(filePath);
+    await expect(graphBuilder.buildGraph(filePath)).rejects.toThrow(
+      'Unsupported file extension: test.txt'
+    );
   });
 });

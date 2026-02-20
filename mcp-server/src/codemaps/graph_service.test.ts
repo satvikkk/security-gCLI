@@ -246,4 +246,35 @@ describe('GraphService', () => {
     expect(graphService.graph.nodes.has('file.py')).toBe(false);
     expect(graphService.graph.nodes.has('file.py:my_function')).toBe(false);
   });
+
+  it('should find references to a class that is instantiated', () => {
+    const serviceNode: GraphNode = {
+      id: 'src/my_service.ts:MyService',
+      type: 'class',
+      name: 'MyService',
+      startLine: 2,
+      endLine: 5,
+      documentation: '',
+      codeSnippet: 'export class MyService {\n  constructor() {}\n}\n',
+    };
+    const mainFileNode: GraphNode = {
+      id: 'src/main.ts',
+      type: 'file',
+      name: 'main.ts',
+      startLine: 0,
+      endLine: 0,
+      documentation: '',
+      codeSnippet: '',
+    };
+    graphService.addNode(serviceNode);
+    graphService.addNode(mainFileNode);
+    graphService.addEdge({
+      source: 'src/main.ts',
+      target: 'src/my_service.ts:MyService',
+      type: 'instantiates',
+    });
+    const references = graphService.findReferences('MyService', 'src/my_service.ts');
+    expect(references).toHaveLength(1);
+    expect(references[0].id).toEqual('src/main.ts');
+  });
 });

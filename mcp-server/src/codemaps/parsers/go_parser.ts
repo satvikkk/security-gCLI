@@ -12,72 +12,97 @@ import { LanguageParser } from './base_parser.js';
 export class GoParser implements LanguageParser {
   constructor(public graphService: GraphService) {}
 
-  parse(node: SyntaxNode, filePath: string, scope: string): string {
+  parse(
+    node: SyntaxNode,
+    filePath: string,
+    scope: string,
+    declarationOnly: boolean
+  ): string {
     let newScope = scope;
 
-    if (node.type === 'function_declaration') {
-      const nameNode = node.childForFieldName('name');
-      if (nameNode) {
-        const name = nameNode.text;
-        const startLine = node.startPosition.row + 1;
-        const endLine = node.endPosition.row + 1;
-        const documentation = this._getDocstring(node);
-        const codeSnippet = node.text;
-            const nodeId = `${scope}:${name}`;
+    if (declarationOnly) {
+      if (node.type === 'function_declaration') {
+        const nameNode = node.childForFieldName('name');
+        if (nameNode) {
+          const name = nameNode.text;
+          const startLine = node.startPosition.row + 1;
+          const endLine = node.endPosition.row + 1;
+          const documentation = this._getDocstring(node);
+          const codeSnippet = node.text;
+          const nodeId = `${scope}:${name}`;
 
-        this.graphService.addNode({
-          id: nodeId,
-          type: 'function',
-          name,
-          startLine,
-          endLine,
-          documentation,
-          codeSnippet,
-        });
-        newScope = nodeId;
-        if (scope) {
-          this.graphService.addEdge({ source: scope, target: nodeId, type: 'contains' });
+          this.graphService.addNode({
+            id: nodeId,
+            type: 'function',
+            name,
+            startLine,
+            endLine,
+            documentation,
+            codeSnippet,
+          });
+          newScope = nodeId;
+          if (scope) {
+            this.graphService.addEdge({
+              source: scope,
+              target: nodeId,
+              type: 'contains',
+            });
+          }
         }
-      }
-    } else if (node.type === 'type_declaration') {
-      for (const spec of this._findAll(node, 'type_spec')) {
-        this._handleTypeSpec(spec, filePath, scope);
-      }
-    } else if (node.type === 'method_declaration') {
+      } else if (node.type === 'type_declaration') {
+        for (const spec of this._findAll(node, 'type_spec')) {
+          this._handleTypeSpec(spec, filePath, scope);
+        }
+      } else if (node.type === 'method_declaration') {
         const receiverNode = node.childForFieldName('receiver');
         const nameNode = node.childForFieldName('name');
         if (receiverNode && nameNode) {
-            const receiverType = this._getReceiverType(receiverNode);
-            const methodName = nameNode.text;
-            if (receiverType) {
-                const parentNode = this.graphService.querySymbol(receiverType, filePath);
-                if (parentNode) {
-                    const startLine = node.startPosition.row + 1;
-                    const endLine = node.endPosition.row + 1;
-                    const documentation = this._getDocstring(node);
-                    const codeSnippet = node.text;
-                    const nodeId = `${parentNode.id}:${methodName}`;
+          const receiverType = this._getReceiverType(receiverNode);
+          const methodName = nameNode.text;
+          if (receiverType) {
+            const parentNode = this.graphService.querySymbol(
+              receiverType,
+              filePath
+            );
+            if (parentNode) {
+              const startLine = node.startPosition.row + 1;
+              const endLine = node.endPosition.row + 1;
+              const documentation = this._getDocstring(node);
+              const codeSnippet = node.text;
+              const nodeId = `${parentNode.id}:${methodName}`;
 
-                    this.graphService.addNode({
-                        id: nodeId,
-                        type: 'function',
-                        name: methodName,
-                        startLine,
-                        endLine,
-                        documentation,
-                        codeSnippet,
-                    });
-                    newScope = nodeId;
-                    this.graphService.addEdge({ source: parentNode.id, target: nodeId, type: 'contains' });
-                }
+              this.graphService.addNode({
+                id: nodeId,
+                type: 'function',
+                name: methodName,
+                startLine,
+                endLine,
+                documentation,
+                codeSnippet,
+              });
+              newScope = nodeId;
+              this.graphService.addEdge({
+                source: parentNode.id,
+                target: nodeId,
+                type: 'contains',
+              });
             }
+          }
         }
-    } else if (node.type === 'call_expression') {
+      }
+      return newScope;
+    }
+
+    if (node.type === 'call_expression') {
       const callee = this._extractCalleeName(node);
       if (callee && scope) {
         const calleeNode = this.graphService.querySymbol(callee);
         if (calleeNode) {
-          this.graphService.addEdge({ source: scope, target: calleeNode.id, type: 'calls' });
+          this.graphService.addEdge({
+            source: scope,
+            target: calleeNode.id,
+            type: 'calls',
+          });
         } else {
           this.graphService.addPendingCall(filePath, scope, callee);
         }

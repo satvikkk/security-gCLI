@@ -22,9 +22,10 @@ export class GraphService {
   private _byName: Map<string, Set<string>>;
   private _byFileAndName: Map<string, string>;
   public _pendingCalls: [string, string, string][];
-  private _fileManifest: Set<string> = new Set();
+  public _fileManifest: Set<string> = new Set();
   private _pathAliases: { alias: string; path: string }[] = [];
   private _projectRoot = '';
+  private _tsOutDir: string | null = null;
   private _goModuleName: string | null = null;
 
   constructor() {
@@ -40,16 +41,23 @@ export class GraphService {
 
   public async initialize(projectRoot: string) {
     this._projectRoot = projectRoot;
+    await this._loadTsConfig(projectRoot);
     await this._buildFileManifest(projectRoot);
     await this._loadTsConfigAliases(projectRoot);
     await this._loadGoModuleInfo(projectRoot);
   }
 
   private async _buildFileManifest(dir: string) {
+    if (this._tsOutDir && path.resolve(dir) === this._tsOutDir) {
+      return;
+    }
     const dirents = await fs.readdir(dir, { withFileTypes: true });
     for (const dirent of dirents) {
       const res = path.resolve(dir, dirent.name);
       if (dirent.name === 'node_modules' || dirent.name === '.git') {
+        continue;
+      }
+      if (this._tsOutDir && res === this._tsOutDir) {
         continue;
       }
       if (dirent.isDirectory()) {
@@ -58,11 +66,15 @@ export class GraphService {
         if (
           res.endsWith('.ts') ||
           res.endsWith('.tsx') ||
-          res.endsWith('.js') ||
           res.endsWith('.py') ||
           res.endsWith('.go')
         ) {
           this._fileManifest.add(res);
+        } else if (res.endsWith('.js')) {
+          const tsVariant = res.slice(0, -3) + '.ts';
+          if (!this._fileManifest.has(tsVariant)) {
+            this._fileManifest.add(res);
+          }
         }
       }
     }
@@ -116,6 +128,32 @@ export class GraphService {
       }
     } catch (error) {
       // It's okay if go.mod doesn't exist.
+    }
+  }
+
+  private async _loadTsConfig(projectRoot: string) {
+    try {
+      const tsConfigPath = path.join(projectRoot, 'tsconfig.json');
+      const tsConfigContent = await fs.readFile(tsConfigPath, 'utf8');
+      let tsConfig;
+      try {
+        const jsonc = tsConfigContent.replace(
+          /\/\*[\s\S]*?\*\/|([^\\:]|^)\/\/.*$/gm,
+          '$1'
+        );
+        tsConfig = JSON.parse(jsonc);
+      } catch (e) {
+        console.error(
+          `Error parsing tsconfig.json at ${tsConfigPath}. It might be invalid JSONC.`
+        );
+        return;
+      }
+      const outDir = tsConfig.compilerOptions?.outDir;
+      if (outDir) {
+        this._tsOutDir = path.resolve(projectRoot, outDir);
+      }
+    } catch (error) {
+      // It's okay if tsconfig.json doesn't exist.
     }
   }
 
@@ -182,13 +220,6 @@ export class GraphService {
     resolvedPath: string,
     language: string
   ): string | null {
-    const extensions = this._getExtensionsForLanguage(language);
-    const indexNames = this._getIndexNamesForLanguage(language);
-
-    if (this._fileManifest.has(resolvedPath)) {
-      return resolvedPath;
-    }
-
     if (
       (language === 'typescript' || language === 'javascript') &&
       resolvedPath.endsWith('.js')
@@ -201,6 +232,13 @@ export class GraphService {
       if (this._fileManifest.has(tsxPath)) {
         return tsxPath;
       }
+    }
+
+    const extensions = this._getExtensionsForLanguage(language);
+    const indexNames = this._getIndexNamesForLanguage(language);
+
+    if (this._fileManifest.has(resolvedPath)) {
+      return resolvedPath;
     }
 
     for (const ext of extensions) {
@@ -405,21 +443,22 @@ export class GraphService {
 
   public findReferences(symbol: string, filePath?: string): GraphNode[] {
     const node = this.querySymbol(symbol, filePath);
-    if (!node) {
-      return [];
-    }
+    if (!node) return [];
 
-    const callers: GraphNode[] = [];
+    const references: GraphNode[] = [];
     const incomingEdges = this.graph.inEdges.get(node.id) || [];
+    
     for (const edge of incomingEdges) {
-      if (edge.type === 'calls') {
+      const referenceTypes = ['calls', 'instantiates', 'references', 'inherits', 'uses'];
+      
+      if (referenceTypes.includes(edge.type)) {
         const sourceNode = this.graph.nodes.get(edge.source);
         if (sourceNode) {
-          callers.push(sourceNode);
+          references.push(sourceNode);
         }
       }
     }
-    return callers;
+    return references;
   }
 
   public getFileStructure(filePath: string): GraphNode | null {
@@ -541,6 +580,25 @@ export class GraphService {
   ) {
     this._pendingCalls.push([filePath, sourceId, calleeName]);
   }
+
+  public processPendingCalls() {
+    const stillPending: [string, string, string][] = [];
+    for (const [filePath, sourceId, calleeName] of this._pendingCalls) {
+      const calleeNode = this.querySymbol(calleeName, filePath);
+      if (calleeNode) {
+        this.addEdge({ source: sourceId, target: calleeNode.id, type: 'calls' });
+      } else {
+        const globalCallee = this.querySymbol(calleeName);
+        if (globalCallee) {
+          this.addEdge({ source: sourceId, target: globalCallee.id, type: 'calls' });
+        } else {
+          stillPending.push([filePath, sourceId, calleeName]);
+        }
+      }
+    }
+    this._pendingCalls = stillPending;
+  }
+
 
   public async saveGraph(outputDir: string) {
     const filePath = path.join(outputDir, 'codemap.json');

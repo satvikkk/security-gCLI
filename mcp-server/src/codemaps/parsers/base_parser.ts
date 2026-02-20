@@ -9,5 +9,10 @@ import { GraphService } from '../graph_service.js';
 
 export interface LanguageParser {
   graphService: GraphService;
-  parse(node: SyntaxNode, filePath: string, scope: string): string;
+  parse(
+    node: SyntaxNode,
+    filePath: string,
+    scope: string,
+    declarationOnly: boolean
+  ): string;
 }

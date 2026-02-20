@@ -12,275 +12,359 @@ import { LanguageParser } from './base_parser.js';
 export class TypeScriptParser implements LanguageParser {
   constructor(public graphService: GraphService) {}
 
-  parse(node: SyntaxNode, filePath: string, scope: string): string {
+  parse(
+    node: SyntaxNode,
+    filePath: string,
+    scope: string,
+    declarationOnly: boolean
+  ): string {
     let newScope = scope;
-
-    if (node.type === 'function_declaration') {
-      const nameNode = node.childForFieldName('name');
-      if (nameNode) {
-        const name = nameNode.text;
-        const startLine = node.startPosition.row + 1;
-        const endLine = node.endPosition.row + 1;
-        const documentation = this._getDocstring(node);
-        const codeSnippet = node.text;
-        const nodeId = `${scope}:${name}`;
-        this.graphService.addNode({
-          id: nodeId,
-          type: 'function',
-          name,
-          startLine,
-          endLine,
-          documentation,
-          codeSnippet,
-        });
-        newScope = nodeId;
-        if (scope) {
-          this.graphService.addEdge({ source: scope, target: nodeId, type: 'contains' });
+    if (declarationOnly) {
+      if (node.type === 'function_declaration') {
+        const nameNode = node.childForFieldName('name');
+        if (nameNode) {
+          const name = nameNode.text;
+          const startLine = node.startPosition.row + 1;
+          const endLine = node.endPosition.row + 1;
+          const documentation = this._getDocstring(node);
+          const codeSnippet = node.text;
+          const nodeId = `${scope}:${name}`;
+          this.graphService.addNode({
+            id: nodeId,
+            type: 'function',
+            name,
+            startLine,
+            endLine,
+            documentation,
+            codeSnippet,
+          });
+          newScope = nodeId;
+          if (scope) {
+            this.graphService.addEdge({
+              source: scope,
+              target: nodeId,
+              type: 'contains',
+            });
+          }
         }
-      }
-    } else if (node.type === 'class_declaration') {
-      const nameNode = node.childForFieldName('name');
-      if (nameNode) {
-        const name = nameNode.text;
-        const startLine = node.startPosition.row + 1;
-        const endLine = node.endPosition.row + 1;
-        const documentation = this._getDocstring(node);
-        const codeSnippet = node.text;
-        const nodeId = `${scope}:${name}`;
+      } else if (node.type === 'class_declaration') {
+        const nameNode = node.childForFieldName('name');
+        if (nameNode) {
+          const name = nameNode.text;
+          const startLine = node.startPosition.row + 1;
+          const endLine = node.endPosition.row + 1;
+          const documentation = this._getDocstring(node);
+          const codeSnippet = node.text;
+          const nodeId = `${scope}:${name}`;
 
-        this.graphService.addNode({
-          id: nodeId,
-          type: 'class',
-          name,
-          startLine,
-          endLine,
-          documentation,
-          codeSnippet,
-        });
-        newScope = nodeId;
-        if (scope) {
-          this.graphService.addEdge({ source: scope, target: nodeId, type: 'contains' });
-        }
+          this.graphService.addNode({
+            id: nodeId,
+            type: 'class',
+            name,
+            startLine,
+            endLine,
+            documentation,
+            codeSnippet,
+          });
+          newScope = nodeId;
+          if (scope) {
+            this.graphService.addEdge({
+              source: scope,
+              target: nodeId,
+              type: 'contains',
+            });
+          }
 
-        const superclass = node.childForFieldName('superclass');
-        let baseName: string | null = null;
-        if (superclass) {
-          baseName = this._tsRightmostIdentifier(superclass);
-        }
+          const superclass = node.childForFieldName('superclass');
+          let baseName: string | null = null;
+          if (superclass) {
+            baseName = this._tsRightmostIdentifier(superclass);
+          }
 
-        if (!baseName) {
-          for (const ch of node.children) {
-            if (
-              ch.type === 'extends_clause' ||
-              ch.type === 'class_heritage' ||
-              ch.type === 'heritage_clause'
-            ) {
-              const cand = this._tsRightmostIdentifier(ch);
-              if (cand) {
-                baseName = cand;
-                break;
+          if (!baseName) {
+            for (const ch of node.children) {
+              if (
+                ch.type === 'extends_clause' ||
+                ch.type === 'class_heritage' ||
+                ch.type === 'heritage_clause'
+              ) {
+                const cand = this._tsRightmostIdentifier(ch);
+                if (cand) {
+                  baseName = cand;
+                  break;
+                }
               }
             }
           }
-        }
 
-        if (baseName) {
-          const parentNode = this.graphService.querySymbol(baseName, filePath);
-          if (parentNode) {
-            this.graphService.addEdge({ source: nodeId, target: parentNode.id, type: 'inherits' });
+          if (baseName) {
+            const parentNode = this.graphService.querySymbol(
+              baseName,
+              filePath
+            );
+            if (parentNode) {
+              this.graphService.addEdge({
+                source: nodeId,
+                target: parentNode.id,
+                type: 'inherits',
+              });
+            }
           }
-        }
 
-        for (const ch of node.children) {
-          if (ch.type === 'implements_clause') {
-            for (const t of ch.namedChildren) {
-              const iface = this._tsRightmostIdentifier(t);
-              if (iface) {
-                const ifaceNode = this.graphService.querySymbol(iface, filePath);
-                if (ifaceNode) {
-                  this.graphService.addEdge({
-                    source: nodeId,
-                    target: ifaceNode.id,
-                    type: 'implements',
-                  });
+          for (const ch of node.children) {
+            if (ch.type === 'implements_clause') {
+              for (const t of ch.namedChildren) {
+                const iface = this._tsRightmostIdentifier(t);
+                if (iface) {
+                  const ifaceNode = this.graphService.querySymbol(
+                    iface,
+                    filePath
+                  );
+                  if (ifaceNode) {
+                    this.graphService.addEdge({
+                      source: nodeId,
+                      target: ifaceNode.id,
+                      type: 'implements',
+                    });
+                  }
                 }
               }
             }
           }
         }
-      }
-    } else if (node.type === 'interface_declaration') {
-      const nameNode = node.childForFieldName('name');
-      if (nameNode) {
-        const name = nameNode.text;
-        const startLine = node.startPosition.row + 1;
-        const endLine = node.endPosition.row + 1;
-        const documentation = this._getDocstring(node);
-        const codeSnippet = node.text;
-        const nodeId = `${scope}:${name}`;
-        this.graphService.addNode({
-          id: nodeId,
-          type: 'interface',
-          name,
-          startLine,
-          endLine,
-          documentation,
-          codeSnippet,
-        });
-        newScope = nodeId;
-        if (scope) {
-          this.graphService.addEdge({ source: scope, target: nodeId, type: 'contains' });
+      } else if (node.type === 'interface_declaration') {
+        const nameNode = node.childForFieldName('name');
+        if (nameNode) {
+          const name = nameNode.text;
+          const startLine = node.startPosition.row + 1;
+          const endLine = node.endPosition.row + 1;
+          const documentation = this._getDocstring(node);
+          const codeSnippet = node.text;
+          const nodeId = `${scope}:${name}`;
+          this.graphService.addNode({
+            id: nodeId,
+            type: 'interface',
+            name,
+            startLine,
+            endLine,
+            documentation,
+            codeSnippet,
+          });
+          newScope = nodeId;
+          if (scope) {
+            this.graphService.addEdge({
+              source: scope,
+              target: nodeId,
+              type: 'contains',
+            });
+          }
         }
-      }
-    } else if (node.type === 'enum_declaration') {
-      const nameNode = node.childForFieldName('name');
-      if (nameNode) {
-        const name = nameNode.text;
-        const startLine = node.startPosition.row + 1;
-        const endLine = node.endPosition.row + 1;
-        const codeSnippet = node.text;
-        const nodeId = `${scope}:${name}`;
-        this.graphService.addNode({
-          id: nodeId,
-          type: 'enum',
-          name,
-          startLine,
-          endLine,
-          documentation: '',
-          codeSnippet,
-        });
-        if (scope) {
-          this.graphService.addEdge({ source: scope, target: nodeId, type: 'contains' });
+      } else if (node.type === 'enum_declaration') {
+        const nameNode = node.childForFieldName('name');
+        if (nameNode) {
+          const name = nameNode.text;
+          const startLine = node.startPosition.row + 1;
+          const endLine = node.endPosition.row + 1;
+          const codeSnippet = node.text;
+          const nodeId = `${scope}:${name}`;
+          this.graphService.addNode({
+            id: nodeId,
+            type: 'enum',
+            name,
+            startLine,
+            endLine,
+            documentation: '',
+            codeSnippet,
+          });
+          if (scope) {
+            this.graphService.addEdge({
+              source: scope,
+              target: nodeId,
+              type: 'contains',
+            });
+          }
         }
-      }
-    } else if (node.type === 'type_alias_declaration') {
-      const nameNode = node.childForFieldName('name');
-      if (nameNode) {
-        const name = nameNode.text;
-        const startLine = node.startPosition.row + 1;
-        const endLine = node.endPosition.row + 1;
-        const codeSnippet = node.text;
-        const nodeId = `${scope}:${name}`;
-        this.graphService.addNode({
-          id: nodeId,
-          type: 'type_alias',
-          name,
-          startLine,
-          endLine,
-          documentation: '',
-          codeSnippet,
-        });
-        if (scope) {
-          this.graphService.addEdge({ source: scope, target: nodeId, type: 'contains' });
+      } else if (node.type === 'type_alias_declaration') {
+        const nameNode = node.childForFieldName('name');
+        if (nameNode) {
+          const name = nameNode.text;
+          const startLine = node.startPosition.row + 1;
+          const endLine = node.endPosition.row + 1;
+          const codeSnippet = node.text;
+          const nodeId = `${scope}:${name}`;
+          this.graphService.addNode({
+            id: nodeId,
+            type: 'type_alias',
+            name,
+            startLine,
+            endLine,
+            documentation: '',
+            codeSnippet,
+          });
+          if (scope) {
+            this.graphService.addEdge({
+              source: scope,
+              target: nodeId,
+              type: 'contains',
+            });
+          }
         }
-      }
-    } else if (node.type === 'method_definition') {
-      const nameNode = node.children.find(
-        (ch) => ch.type === 'property_identifier' || ch.type === 'private_property_identifier'
-      );
-      if (nameNode) {
-        const name = nameNode.text;
-        const startLine = node.startPosition.row + 1;
-        const endLine = node.endPosition.row + 1;
-        const documentation = this._getDocstring(node);
-        const codeSnippet = node.text;
-        const nodeId = `${scope}:${name}`;
-        this.graphService.addNode({
-          id: nodeId,
-          type: 'function',
-          name,
-          startLine,
-          endLine,
-          documentation,
-          codeSnippet,
-        });
-        if (scope) {
-          this.graphService.addEdge({ source: scope, target: nodeId, type: 'contains' });
+      } else if (node.type === 'method_definition') {
+        const nameNode = node.children.find(
+          (ch) =>
+            ch.type === 'property_identifier' ||
+            ch.type === 'private_property_identifier'
+        );
+        if (nameNode) {
+          const name = nameNode.text;
+          const startLine = node.startPosition.row + 1;
+          const endLine = node.endPosition.row + 1;
+          const documentation = this._getDocstring(node);
+          const codeSnippet = node.text;
+          const nodeId = `${scope}:${name}`;
+          this.graphService.addNode({
+            id: nodeId,
+            type: 'function',
+            name,
+            startLine,
+            endLine,
+            documentation,
+            codeSnippet,
+          });
+          if (scope) {
+            this.graphService.addEdge({
+              source: scope,
+              target: nodeId,
+              type: 'contains',
+            });
+          }
+          newScope = nodeId;
         }
-        newScope = nodeId;
-      }
-    } else if (node.type === 'method_signature') {
-      const nameNode = node.children.find(
-        (ch) => ch.type === 'property_identifier' || ch.type === 'private_property_identifier'
-      );
-      if (nameNode) {
-        const name = nameNode.text;
-        const startLine = node.startPosition.row + 1;
-        const endLine = node.endPosition.row + 1;
-        const codeSnippet = node.text;
-        const nodeId = `${scope}:${name}`;
-        this.graphService.addNode({
-          id: nodeId,
-          type: 'method',
-          name,
-          startLine,
-          endLine,
-          documentation: '',
-          codeSnippet,
-        });
-        if (scope) {
-          this.graphService.addEdge({ source: scope, target: nodeId, type: 'contains' });
+      } else if (node.type === 'method_signature') {
+        const nameNode = node.children.find(
+          (ch) =>
+            ch.type === 'property_identifier' ||
+            ch.type === 'private_property_identifier'
+        );
+        if (nameNode) {
+          const name = nameNode.text;
+          const startLine = node.startPosition.row + 1;
+          const endLine = node.endPosition.row + 1;
+          const codeSnippet = node.text;
+          const nodeId = `${scope}:${name}`;
+          this.graphService.addNode({
+            id: nodeId,
+            type: 'method',
+            name,
+            startLine,
+            endLine,
+            documentation: '',
+            codeSnippet,
+          });
+          if (scope) {
+            this.graphService.addEdge({
+              source: scope,
+              target: nodeId,
+              type: 'contains',
+            });
+          }
         }
-      }
-    } else if (node.type === 'variable_declarator') {
-      const nameNode = node.childForFieldName('name');
-      const valueNode = node.childForFieldName('value');
+      } else if (node.type === 'variable_declarator') {
+        const nameNode = node.childForFieldName('name');
+        const valueNode = node.childForFieldName('value');
 
-      if (nameNode && nameNode.type === 'identifier') {
-        const varName = nameNode.text;
-        const startLine = node.startPosition.row + 1;
-        const endLine = node.endPosition.row + 1;
-        const codeSnippet = node.text;
-        const varId = `${scope}:${varName}`;
-        this.graphService.addNode({
-          id: varId,
-          type: 'variable',
-          name: varName,
-          startLine,
-          endLine,
-          documentation: '',
-          codeSnippet,
-        });
-        if (scope) {
-          this.graphService.addEdge({ source: scope, target: varId, type: 'contains' });
+        if (nameNode && nameNode.type === 'identifier') {
+          const varName = nameNode.text;
+          const startLine = node.startPosition.row + 1;
+          const endLine = node.endPosition.row + 1;
+          const codeSnippet = node.text;
+          const varId = `${scope}:${varName}`;
+          this.graphService.addNode({
+            id: varId,
+            type: 'variable',
+            name: varName,
+            startLine,
+            endLine,
+            documentation: '',
+            codeSnippet,
+          });
+          if (scope) {
+            this.graphService.addEdge({
+              source: scope,
+              target: varId,
+              type: 'contains',
+            });
+          }
         }
-      }
 
-      if (
-        nameNode &&
-        nameNode.type === 'identifier' &&
-        valueNode &&
-        (valueNode.type === 'function_expression' || valueNode.type === 'arrow_function')
-      ) {
-        const funcName = nameNode.text;
-        const startLine = valueNode.startPosition.row + 1;
-        const endLine = valueNode.endPosition.row + 1;
-        const documentation = this._getDocstring(node);
-        const codeSnippet = valueNode.text;
-        const funcId = `${scope}:${funcName}`;
-        this.graphService.addNode({
-          id: funcId,
-          type: 'function',
-          name: funcName,
-          startLine,
-          endLine,
-          documentation,
-          codeSnippet,
-        });
-        if (scope) {
-          this.graphService.addEdge({ source: scope, target: funcId, type: 'contains' });
+        if (
+          nameNode &&
+          nameNode.type === 'identifier' &&
+          valueNode &&
+          (valueNode.type === 'function_expression' ||
+            valueNode.type === 'arrow_function')
+        ) {
+          const funcName = nameNode.text;
+          const startLine = valueNode.startPosition.row + 1;
+          const endLine = valueNode.endPosition.row + 1;
+          const documentation = this._getDocstring(node);
+          const codeSnippet = valueNode.text;
+          const funcId = `${scope}:${funcName}`;
+          this.graphService.addNode({
+            id: funcId,
+            type: 'function',
+            name: funcName,
+            startLine,
+            endLine,
+            documentation,
+            codeSnippet,
+          });
+          if (scope) {
+            this.graphService.addEdge({
+              source: scope,
+              target: funcId,
+              type: 'contains',
+            });
+          }
         }
       }
-    } else if (node.type === 'call_expression') {
+      return newScope;
+    }
+
+    if (node.type === 'call_expression' || node.type === 'new_expression') {
       if (this._maybeAddCommonJsImport(node, filePath)) {
         return newScope;
       }
 
       const calleeName = this._getCalleeName(node);
       if (calleeName && scope) {
-        const calleeNode = this.graphService.querySymbol(calleeName, filePath);
+        let calleeNode = this.graphService.querySymbol(calleeName, filePath);
+        const edgeType =
+          node.type === 'new_expression' ? 'instantiates' : 'calls';
+
+        if (!calleeNode) {
+          // Attempt to resolve as an imported module
+          const resolvedModuleId = this.graphService.resolveModuleId(
+            calleeName,
+            filePath,
+            'typescript'
+          );
+          if (resolvedModuleId.startsWith('file:')) {
+            // If it resolved to a file, try to find the symbol within that file
+            const resolvedFilePath = resolvedModuleId.substring(5); // Remove 'file:' prefix
+            calleeNode = this.graphService.querySymbol(calleeName, resolvedFilePath);
+          } else if (resolvedModuleId.startsWith('module:')) {
+            // If it resolved to a module, it might be a global symbol or an external module
+            calleeNode = this.graphService.querySymbol(calleeName); // Search globally
+          }
+        }
+
         if (calleeNode) {
-          this.graphService.addEdge({ source: scope, target: calleeNode.id, type: 'calls' });
+          this.graphService.addEdge({
+            source: scope,
+            target: calleeNode.id,
+            type: edgeType,
+          });
         } else {
           this.graphService.addPendingCall(filePath, scope, calleeName);
         }
@@ -289,11 +373,22 @@ export class TypeScriptParser implements LanguageParser {
       const sourceNode = node.childForFieldName('source');
       if (sourceNode) {
         let moduleName = sourceNode.text;
-        if (moduleName.length >= 2 && (moduleName.startsWith("'") || moduleName.startsWith('"'))) {
+        if (
+          moduleName.length >= 2 &&
+          (moduleName.startsWith("'") || moduleName.startsWith('"'))
+        ) {
           moduleName = moduleName.slice(1, -1);
         }
-        const targetId = this.graphService.resolveModuleId(moduleName, filePath, 'typescript');
-        this.graphService.addEdge({ source: filePath, target: targetId, type: 'imports' });
+        const targetId = this.graphService.resolveModuleId(
+          moduleName,
+          filePath,
+          'typescript'
+        );
+        this.graphService.addEdge({
+          source: filePath,
+          target: targetId,
+          type: 'imports',
+        });
       }
     }
 
@@ -309,7 +404,13 @@ export class TypeScriptParser implements LanguageParser {
   }
 
   private _getCalleeName(callNode: SyntaxNode): string | null {
-    const fn = callNode.childForFieldName('function');
+    let fn: SyntaxNode | null = null;
+    if (callNode.type === 'call_expression') {
+      fn = callNode.childForFieldName('function');
+    } else if (callNode.type === 'new_expression') {
+      fn = callNode.childForFieldName('constructor');
+    }
+
     if (!fn) {
       return null;
     }
