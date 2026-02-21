@@ -480,11 +480,11 @@ export class GraphService {
     };
   }
 
-  public findReferences(symbol: string, filePath?: string): GraphNode[] {
+  public findReferences(symbol: string, filePath?: string): RelatedSymbol[] {
     const node = this.querySymbol(symbol, filePath);
     if (!node) return [];
 
-    const references: GraphNode[] = [];
+    const references: RelatedSymbol[] = [];
     const incomingEdges = this.graph.inEdges.get(node.id) || [];
     
     for (const edge of incomingEdges) {
@@ -493,7 +493,11 @@ export class GraphService {
       if (referenceTypes.includes(edge.type)) {
         const sourceNode = this.graph.nodes.get(edge.source);
         if (sourceNode) {
-          references.push(sourceNode);
+          references.push({
+            ...sourceNode,
+            weight: edge.weight,
+            locations: edge.locations,
+          });
         }
       }
     }
