@@ -1,6 +1,7 @@
 import { GraphService } from './codemaps/graph_service.js';
 import { GraphBuilder } from './codemaps/graph_builder.js';
 import { SemanticSearchService } from './codemaps/semantic/semantic_search.js';
+import { GraphRetrievalService } from './codemaps/semantic/graph_retrieval_service.js';
 import { VectorStore } from './codemaps/semantic/vector_store.js';
 import { MockEmbeddingProvider } from './codemaps/semantic/providers/mock_embedding_provider.js';
 import { GoogleGenAIEmbeddingProvider } from './codemaps/semantic/providers/google_genai_embedding_provider.js';
@@ -47,6 +48,7 @@ async function main() {
     const forceReindex = args.includes('--force');
     const noEdges = args.includes('--no-edges');
     const useCodeChunk = args.includes('--use-code-chunk');
+    const useGraphRag = args.includes('--strategy=graph_rag');
 
     let concurrency = 10;
     const concurrencyArg = args.find(a => a.startsWith('--concurrency='));
@@ -133,14 +135,35 @@ async function main() {
     const query = "function that translates one type of analytical definition into a different logic-based format to allow for unified evaluation. This process involves parsing complex expressions to extract data dependencies, normalizing syntax for compatibility with a target engine, and dynamically expanding specialized aggregate keywords into a series of functional calls based on the discovered dependencies. ";
     console.log(`\n🔎 Query: "${query}"`);
 
-    const results = await semanticService.searchNodes(query, 30);
+    if (useGraphRag) {
+        console.log(`\n🚀 Using GraphRAG (Component Expansion) Strategy`);
+        const retrievalService = new GraphRetrievalService(semanticService, graphService);
+        const results = await retrievalService.searchWithGraphExpansion(query, 5);
 
-    console.log(`\nResults:`);
-    results.forEach((node, i) => {
-        console.log(`\n[${i + 1}] Score: ${node.score.toFixed(4)} | ID: ${node.id}`);
-        console.log(`    Type: ${node.type}`);
-        console.log(`    Snippet: ${(node.codeSnippet || '').slice(0, 100).replace(/\n/g, ' ')}...`);
-    });
+        console.log(`\nResults:`);
+        results.forEach((node, i) => {
+            console.log(`\n[${i + 1}] Score: ${node.score.toFixed(4)} | Seed ID: ${node.id}`);
+            console.log(`    Type: ${node.type}`);
+            console.log(`    Snippet: ${(node.codeSnippet || '').slice(0, 100).replace(/\n/g, ' ')}...`);
+
+            if (node.expandedContext.calledBy.length > 0) {
+                console.log(`    <- Called By (${node.expandedContext.calledBy.length}): ${node.expandedContext.calledBy.map(n => n.name).join(', ')}`);
+            }
+            if (node.expandedContext.callsOutTo.length > 0) {
+                console.log(`    -> Calls Out To (${node.expandedContext.callsOutTo.length}): ${node.expandedContext.callsOutTo.map(n => n.name).join(', ')}`);
+            }
+        });
+    } else {
+        console.log(`\n🚀 Using Standard Flat Semantic Search Strategy`);
+        const results = await semanticService.searchNodes(query, 10);
+
+        console.log(`\nResults:`);
+        results.forEach((node, i) => {
+            console.log(`\n[${i + 1}] Score: ${node.score.toFixed(4)} | ID: ${node.id}`);
+            console.log(`    Type: ${node.type}`);
+            console.log(`    Snippet: ${(node.codeSnippet || '').slice(0, 100).replace(/\n/g, ' ')}...`);
+        });
+    }
 }
 
 main().catch(console.error);
