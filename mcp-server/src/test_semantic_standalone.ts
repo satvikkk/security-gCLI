@@ -2,9 +2,14 @@ import { GraphService } from './codemaps/graph_service.js';
 import { GraphBuilder } from './codemaps/graph_builder.js';
 import { SemanticSearchService } from './codemaps/semantic/semantic_search.js';
 import { GraphRetrievalService } from './codemaps/semantic/graph_retrieval_service.js';
+import { HierarchicalSearchService } from './codemaps/semantic/hierarchical_search_service.js';
+import { SemanticRouter } from './codemaps/semantic/semantic_router.js';
 import { VectorStore } from './codemaps/semantic/vector_store.js';
 import { MockEmbeddingProvider } from './codemaps/semantic/providers/mock_embedding_provider.js';
 import { GoogleGenAIEmbeddingProvider } from './codemaps/semantic/providers/google_genai_embedding_provider.js';
+import { GoogleGenAILlmProvider } from './codemaps/semantic/providers/google_genai_llm_provider.js';
+import { LlmProvider } from './codemaps/semantic/llm_provider.js';
+import { MockLlmProvider } from './codemaps/semantic/providers/mock_llm_provider.js';
 import { OllamaEmbeddingProvider } from './codemaps/semantic/providers/ollama_embedding_provider.js';
 import * as path from 'path';
 import { promises as fs } from 'fs';
@@ -49,6 +54,9 @@ async function main() {
     const noEdges = args.includes('--no-edges');
     const useCodeChunk = args.includes('--use-code-chunk');
     const useGraphRag = args.includes('--strategy=graph_rag');
+    const useHierarchical = args.includes('--strategy=hierarchical');
+    const useAgenticRouter = args.includes('--strategy=agentic_router');
+    const useMockLlm = args.includes('--mock-llm');
 
     let concurrency = 10;
     const concurrencyArg = args.find(a => a.startsWith('--concurrency='));
@@ -112,6 +120,18 @@ async function main() {
         embeddingProvider = new MockEmbeddingProvider();
     }
 
+    let llmProvider: LlmProvider;
+    if (useMockLlm) {
+        console.log(`\nUsing Mock LLM Provider...`);
+        llmProvider = new MockLlmProvider();
+    } else if (process.env.GOOGLE_API_KEY) {
+        console.log(`\nUsing Google GenAI LLM Provider...`);
+        llmProvider = new GoogleGenAILlmProvider(process.env.GOOGLE_API_KEY);
+    } else {
+        console.warn(`\n[Warning] No GOOGLE_API_KEY found, falling back to MockLlmProvider.`);
+        llmProvider = new MockLlmProvider();
+    }
+
     const semanticService = new SemanticSearchService(graphService, vectorStore, embeddingProvider);
 
     // 4. Index
@@ -153,12 +173,34 @@ async function main() {
                 console.log(`    -> Calls Out To (${node.expandedContext.callsOutTo.length}): ${node.expandedContext.callsOutTo.map(n => n.name).join(', ')}`);
             }
         });
+    } else if (useHierarchical) {
+        console.log(`\n🚀 Using Hierarchical (Top-Down) Search Strategy`);
+        const hierarchicalService = new HierarchicalSearchService(vectorStore, embeddingProvider);
+        const results = await hierarchicalService.hierarchicalSearch(query, 3); // 3 items per level
+
+        console.log(`\nResults:`);
+        results.forEach((node, i) => {
+            console.log(`\n[${i + 1}] Score: ${node.score.toFixed(4)} | ID: ${node.id}`);
+            console.log(`    Type: ${node.type}`);
+            console.log(`    Snippet: ${(node.codeSnippet || '').slice(0, 100).replace(/\n/g, ' ')}...`);
+        });
+    } else if (useAgenticRouter) {
+        console.log(`\n🚀 Using Structural Agentic Routing Strategy`);
+        const router = new SemanticRouter(graphService, vectorStore, embeddingProvider, llmProvider);
+        const results = await router.routeAndSearch(query, 10);
+
+        console.log(`\nResults:`);
+        results.forEach((node, i) => {
+            console.log(`\n[${i + 1}] Score: ${node.score.toFixed(4)} | ID: ${node.id}`);
+            console.log(`    Type: ${node.type}`);
+            console.log(`    Snippet: ${(node.codeSnippet || '').slice(0, 100).replace(/\n/g, ' ')}...`);
+        });
     } else {
         console.log(`\n🚀 Using Standard Flat Semantic Search Strategy`);
         const results = await semanticService.searchNodes(query, 10);
 
         console.log(`\nResults:`);
-        results.forEach((node, i) => {
+        results.forEach((node: any, i: number) => {
             console.log(`\n[${i + 1}] Score: ${node.score.toFixed(4)} | ID: ${node.id}`);
             console.log(`    Type: ${node.type}`);
             console.log(`    Snippet: ${(node.codeSnippet || '').slice(0, 100).replace(/\n/g, ' ')}...`);

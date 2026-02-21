@@ -81,6 +81,25 @@ export class VectorStore {
     return this.documents.find(d => d.id === id);
   }
 
+  /**
+   * Finds the top k most similar documents that pass the given filter.
+   */
+  searchFiltered(queryVector: number[], k: number = 5, filterFn: (doc: VectorDocument) => boolean): SemanticQueryResult[] {
+    if (this.documents.length === 0) return [];
+
+    const filteredDocs = this.documents.filter(filterFn);
+
+    const scored: SemanticQueryResult[] = filteredDocs.map(doc => ({
+      document: doc,
+      score: this.cosineSimilarity(queryVector, doc.vector)
+    }));
+
+    // Sort descending by score
+    scored.sort((a, b) => b.score - a.score);
+
+    return scored.slice(0, k);
+  }
+
   private cosineSimilarity(vecA: number[], vecB: number[]): number {
     let dotProduct = 0;
     let normA = 0;
