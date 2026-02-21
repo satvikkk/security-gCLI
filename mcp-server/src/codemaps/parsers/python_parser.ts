@@ -104,14 +104,23 @@ export class PythonParser implements LanguageParser {
       const calleeName = this._pyCalleeName(node);
       if (calleeName && scope) {
         const calleeNode = this.graphService.querySymbol(calleeName);
+        const line = node.startPosition.row + 1;
+        const snippet = node.text;
         if (calleeNode) {
           this.graphService.addEdge({
             source: scope,
             target: calleeNode.id,
             type: 'calls',
+            locations: [{ line, snippet }],
           });
         } else {
-          this.graphService.addPendingCall(filePath, scope, calleeName);
+          this.graphService.addPendingCall(
+            filePath,
+            scope,
+            calleeName,
+            line,
+            snippet
+          );
         }
       }
     } else if (node.type === 'import_statement') {
@@ -127,6 +136,7 @@ export class PythonParser implements LanguageParser {
             source: filePath,
             target: targetId,
             type: 'imports',
+            locations: [{ line: node.startPosition.row + 1, snippet: node.text }],
           });
         }
       }
@@ -143,6 +153,7 @@ export class PythonParser implements LanguageParser {
           source: filePath,
           target: targetId,
           type: 'imports',
+          locations: [{ line: node.startPosition.row + 1, snippet: node.text }],
         });
       }
     }

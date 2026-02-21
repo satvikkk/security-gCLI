@@ -40,22 +40,23 @@ export class GraphBuilder {
       };
     }
 
-    public async buildGraph(filePath: string) {
+    public async buildGraph(filePath: string, filesToProcess?: Iterable<string>) {
       if (!this.isInitialized) {
         await this._findAndSetProjectRoot(filePath);
         await this.graphService.initialize(this.projectRoot!);
         this.isInitialized = true;
       }
 
-      await this._declarationPass();
-      await this._resolutionPass();
+      const targets = filesToProcess || this.graphService._fileManifest;
+      await this._declarationPass(targets);
+      await this._resolutionPass(targets);
 
       this.graphService.processPendingCalls();
       return this.graphService.graph;
     }
 
-  private async _declarationPass() {
-    for (const filePath of this.graphService._fileManifest) {
+  private async _declarationPass(targets: Iterable<string>) {
+    for (const filePath of targets) {
       const language = this._getLanguageFromFileExtension(filePath);
       const languageMapping = this.languages[language];
       if (!languageMapping) {
@@ -83,8 +84,8 @@ export class GraphBuilder {
     }
   }
 
-  private async _resolutionPass() {
-    for (const filePath of this.graphService._fileManifest) {
+  private async _resolutionPass(targets: Iterable<string>) {
+    for (const filePath of targets) {
       const language = this._getLanguageFromFileExtension(filePath);
       const languageMapping = this.languages[language];
       if (!languageMapping) {

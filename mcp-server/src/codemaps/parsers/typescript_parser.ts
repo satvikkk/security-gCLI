@@ -341,6 +341,8 @@ export class TypeScriptParser implements LanguageParser {
         let calleeNode = this.graphService.querySymbol(calleeName, filePath);
         const edgeType =
           node.type === 'new_expression' ? 'instantiates' : 'calls';
+        const line = node.startPosition.row + 1;
+        const snippet = node.text;
 
         if (!calleeNode) {
           // Attempt to resolve as an imported module
@@ -364,9 +366,16 @@ export class TypeScriptParser implements LanguageParser {
             source: scope,
             target: calleeNode.id,
             type: edgeType,
+            locations: [{ line, snippet }],
           });
         } else {
-          this.graphService.addPendingCall(filePath, scope, calleeName);
+          this.graphService.addPendingCall(
+            filePath,
+            scope,
+            calleeName,
+            line,
+            snippet
+          );
         }
       }
     } else if (node.type === 'import_statement') {
@@ -388,6 +397,7 @@ export class TypeScriptParser implements LanguageParser {
           source: filePath,
           target: targetId,
           type: 'imports',
+          locations: [{ line: node.startPosition.row + 1, snippet: node.text }],
         });
       }
     }
@@ -478,7 +488,12 @@ export class TypeScriptParser implements LanguageParser {
       return false;
     }
     const targetId = this.graphService.resolveModuleId(mod, filePath, 'typescript');
-    this.graphService.addEdge({ source: filePath, target: targetId, type: 'imports' });
+    this.graphService.addEdge({
+      source: filePath,
+      target: targetId,
+      type: 'imports',
+      locations: [{ line: callNode.startPosition.row + 1, snippet: callNode.text }],
+    });
     return true;
   }
 }

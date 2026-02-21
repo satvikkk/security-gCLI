@@ -18,7 +18,10 @@ export interface GraphEdge {
   source: string;
   target: string;
   type: string;
+  weight?: number;
+  locations?: { line: number; snippet?: string }[];
 }
+
 export interface SymbolSearchResult {
   name: string;
   type: string;
@@ -30,11 +33,16 @@ export interface SymbolSearchResult {
   score: number;
 }
 
+export interface RelatedSymbol extends GraphNode {
+  weight?: number;
+  locations?: { line: number; snippet?: string }[];
+}
+
 export interface SymbolDetails extends GraphNode {
   relationships: {
-    parentClasses: GraphNode[];
-    callees: GraphNode[];
-    callers: GraphNode[];
-    children: GraphNode[];
+    parentClasses: RelatedSymbol[];
+    callees: RelatedSymbol[];
+    callers: RelatedSymbol[];
+    children: RelatedSymbol[];
   };
 }

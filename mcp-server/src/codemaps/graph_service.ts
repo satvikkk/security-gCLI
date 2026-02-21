@@ -9,6 +9,7 @@ import {
   GraphEdge,
   SymbolSearchResult,
   SymbolDetails,
+  RelatedSymbol,
 } from './models.js';
 import { promises as fs } from 'fs';
 import path from 'path';
@@ -21,7 +22,7 @@ export class GraphService {
   };
   private _byName: Map<string, Set<string>>;
   private _byFileAndName: Map<string, string>;
-  public _pendingCalls: [string, string, string][];
+  public _pendingCalls: [string, string, string, number?, string?][];
   public _fileManifest: Set<string> = new Set();
   private _pathAliases: { alias: string; path: string }[] = [];
   private _projectRoot = '';
@@ -308,7 +309,36 @@ export class GraphService {
     if (!this.graph.edges.has(edge.source)) {
       this.graph.edges.set(edge.source, []);
     }
-    this.graph.edges.get(edge.source)!.push(edge);
+    
+    const sourceOutEdges = this.graph.edges.get(edge.source)!;
+    const existingEdge = sourceOutEdges.find(
+      (e) => e.target === edge.target && e.type === edge.type
+    );
+
+    if (existingEdge) {
+      existingEdge.weight = (existingEdge.weight || 1) + (edge.weight || 1);
+      if (!existingEdge.locations) {
+        existingEdge.locations = [];
+      }
+      if (edge.locations) {
+        for (const loc of edge.locations) {
+          const isDuplicate = existingEdge.locations.some(
+            (existingLoc) => existingLoc.line === loc.line && existingLoc.snippet === loc.snippet
+          );
+          if (!isDuplicate) {
+            existingEdge.locations.push(loc);
+          }
+        }
+      }
+      return;
+    }
+
+    edge.weight = edge.weight || 1;
+    if (!edge.locations) {
+      edge.locations = [];
+    }
+
+    sourceOutEdges.push(edge);
 
     if (!this.graph.inEdges.has(edge.target)) {
       this.graph.inEdges.set(edge.target, []);
@@ -415,12 +445,17 @@ export class GraphService {
     for (const edge of outgoingEdges) {
       const targetNode = this.graph.nodes.get(edge.target);
       if (targetNode) {
+        const related: RelatedSymbol = {
+          ...targetNode,
+          weight: edge.weight,
+          locations: edge.locations,
+        };
         if (edge.type === 'inherits') {
-          relationships.parentClasses.push(targetNode);
+          relationships.parentClasses.push(related);
         } else if (edge.type === 'calls') {
-          relationships.callees.push(targetNode);
+          relationships.callees.push(related);
         } else if (edge.type === 'contains') {
-          relationships.children.push(targetNode);
+          relationships.children.push(related);
         }
       }
     }
@@ -430,7 +465,11 @@ export class GraphService {
       if (edge.type === 'calls') {
         const sourceNode = this.graph.nodes.get(edge.source);
         if (sourceNode) {
-          relationships.callers.push(sourceNode);
+          relationships.callers.push({
+            ...sourceNode,
+            weight: edge.weight,
+            locations: edge.locations,
+          });
         }
       }
     }
@@ -492,14 +531,18 @@ export class GraphService {
     return buildTree(filePath);
   }
 
-  public getOutgoingDependencies(filePath: string): GraphNode[] {
-    const dependencies: GraphNode[] = [];
+  public getOutgoingDependencies(filePath: string): RelatedSymbol[] {
+    const dependencies: RelatedSymbol[] = [];
     const outgoingEdges = this.graph.edges.get(filePath) || [];
     for (const edge of outgoingEdges) {
       if (edge.type === 'imports') {
         const targetNode = this.graph.nodes.get(edge.target);
         if (targetNode) {
-          dependencies.push(targetNode);
+          dependencies.push({
+            ...targetNode,
+            weight: edge.weight,
+            locations: edge.locations,
+          });
         }
       }
     }
@@ -576,23 +619,37 @@ export class GraphService {
   public addPendingCall(
     filePath: string,
     sourceId: string,
-    calleeName: string
+    calleeName: string,
+    line?: number,
+    snippet?: string
   ) {
-    this._pendingCalls.push([filePath, sourceId, calleeName]);
+    this._pendingCalls.push([filePath, sourceId, calleeName, line, snippet]);
   }
 
   public processPendingCalls() {
-    const stillPending: [string, string, string][] = [];
-    for (const [filePath, sourceId, calleeName] of this._pendingCalls) {
+    const stillPending: [string, string, string, number?, string?][] = [];
+    for (const [filePath, sourceId, calleeName, line, snippet] of this._pendingCalls) {
       const calleeNode = this.querySymbol(calleeName, filePath);
+      const locations =
+        line !== undefined ? [{ line, snippet }] : undefined;
       if (calleeNode) {
-        this.addEdge({ source: sourceId, target: calleeNode.id, type: 'calls' });
+        this.addEdge({
+          source: sourceId,
+          target: calleeNode.id,
+          type: 'calls',
+          locations,
+        });
       } else {
         const globalCallee = this.querySymbol(calleeName);
         if (globalCallee) {
-          this.addEdge({ source: sourceId, target: globalCallee.id, type: 'calls' });
+          this.addEdge({
+            source: sourceId,
+            target: globalCallee.id,
+            type: 'calls',
+            locations,
+          });
         } else {
-          stillPending.push([filePath, sourceId, calleeName]);
+          stillPending.push([filePath, sourceId, calleeName, line, snippet]);
         }
       }
     }

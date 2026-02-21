@@ -97,14 +97,23 @@ export class GoParser implements LanguageParser {
       const callee = this._extractCalleeName(node);
       if (callee && scope) {
         const calleeNode = this.graphService.querySymbol(callee);
+        const line = node.startPosition.row + 1;
+        const snippet = node.text;
         if (calleeNode) {
           this.graphService.addEdge({
             source: scope,
             target: calleeNode.id,
             type: 'calls',
+            locations: [{ line, snippet }],
           });
         } else {
-          this.graphService.addPendingCall(filePath, scope, callee);
+          this.graphService.addPendingCall(
+            filePath,
+            scope,
+            callee,
+            line,
+            snippet
+          );
         }
       }
     } else if (node.type === 'import_declaration') {
@@ -130,6 +139,7 @@ export class GoParser implements LanguageParser {
             source: filePath,
             target: targetId,
             type: 'imports',
+            locations: [{ line: node.startPosition.row + 1, snippet: node.text }],
           });
         }
       }

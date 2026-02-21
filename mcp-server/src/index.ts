@@ -63,6 +63,7 @@ async function ensureGraphReady() {
     for (const file of files) {
       try {
         await graphBuilder.buildGraph(file);
+        break; // Successfully built the graph for the entire project, stop looping
       } catch (e: any) {
         // Ignore errors for unsupported file types
       }
@@ -245,7 +246,7 @@ server.tool(
     const GEMINI_SECURITY_DIR = path.join(process.cwd(), '.gemini_security');
     for (const file of input.files) {
       graphService.clearFile(file);
-      await graphBuilder.buildGraph(file);
+      await graphBuilder.buildGraph(file, [file]);
     }
     await graphService.saveGraph(GEMINI_SECURITY_DIR);
     return {

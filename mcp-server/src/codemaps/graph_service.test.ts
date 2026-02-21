@@ -112,19 +112,40 @@ describe('GraphService', () => {
     expect(results[0].name).toEqual('my_function');
   });
 
-  it('should get symbol details', () => {
+  it('should get symbol details with relationship metadata', () => {
+    const callerNode: GraphNode = {
+      id: 'file.py:caller',
+      type: 'function',
+      name: 'caller',
+      startLine: 1,
+      endLine: 5,
+      documentation: '',
+      codeSnippet: '',
+    };
     const node: GraphNode = {
       id: 'file.py:my_function',
       type: 'function',
       name: 'my_function',
-      startLine: 1,
-      endLine: 10,
+      startLine: 10,
+      endLine: 20,
       documentation: '',
       codeSnippet: '',
     };
+    graphService.addNode(callerNode);
     graphService.addNode(node);
+    graphService.addEdge({
+      source: 'file.py:caller',
+      target: 'file.py:my_function',
+      type: 'calls',
+      locations: [{ line: 3, snippet: 'my_function()' }],
+    });
+
     const details = graphService.getSymbolDetails('my_function', 'file.py');
     expect(details?.name).toEqual('my_function');
+    expect(details?.relationships.callers).toHaveLength(1);
+    expect(details?.relationships.callers[0].weight).toBe(1);
+    expect(details?.relationships.callers[0].locations).toHaveLength(1);
+    expect(details?.relationships.callers[0].locations![0].line).toBe(3);
   });
 
   it('should find references to a symbol', () => {
@@ -276,5 +297,32 @@ describe('GraphService', () => {
     const references = graphService.findReferences('MyService', 'src/my_service.ts');
     expect(references).toHaveLength(1);
     expect(references[0].id).toEqual('src/main.ts');
+  });
+
+  it('should deduplicate edges and track weight and locations', () => {
+    const source = 'file.ts:caller';
+    const target = 'module:fs';
+    const type = 'calls';
+
+    graphService.addEdge({
+      source,
+      target,
+      type,
+      locations: [{ line: 10, snippet: 'fs.readFile()' }],
+    });
+
+    graphService.addEdge({
+      source,
+      target,
+      type,
+      locations: [{ line: 20, snippet: 'fs.writeFile()' }],
+    });
+
+    const edges = graphService.graph.edges.get(source);
+    expect(edges).toHaveLength(1);
+    expect(edges![0].weight).toBe(2);
+    expect(edges![0].locations).toHaveLength(2);
+    expect(edges![0].locations![0].line).toBe(10);
+    expect(edges![0].locations![1].line).toBe(20);
   });
 });
