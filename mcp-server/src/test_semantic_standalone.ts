@@ -46,6 +46,7 @@ async function main() {
     const args = process.argv.slice(2);
     const forceReindex = args.includes('--force');
     const noEdges = args.includes('--no-edges');
+    const useCodeChunk = args.includes('--use-code-chunk');
 
     let concurrency = 10;
     const concurrencyArg = args.find(a => a.startsWith('--concurrency='));
@@ -74,18 +75,23 @@ async function main() {
     const graphService = new GraphService();
     const graphBuilder = new GraphBuilder(graphService);
 
-    // 2. Build Graph
+    // 2. Build Graph (skip if using code-chunk)
     const files = await scan_dir(targetDir);
-    console.log(`Found ${files.length} files. Building graph...`);
+    console.log(`Found ${files.length} files.`);
 
-    for (const file of files) {
-        try {
-            await graphBuilder.buildGraph(file);
-        } catch (e: any) {
-            // ignore errors
+    if (!useCodeChunk) {
+        console.log(`Building graph manually...`);
+        for (const file of files) {
+            try {
+                await graphBuilder.buildGraph(file);
+            } catch (e: any) {
+                // ignore errors
+            }
         }
+        console.log(`✅ Graph built! Nodes: ${graphService.graph.nodes.size}`);
+    } else {
+        console.log(`Skipping manual graph build in favor of code-chunk...`);
     }
-    console.log(`✅ Graph built! Nodes: ${graphService.graph.nodes.size}`);
 
     // 3. Initialize Semantic Components
     const vectorStore = new VectorStore(storePath);
@@ -110,8 +116,14 @@ async function main() {
     console.log(`\nloading existing index...`);
     await vectorStore.load();
     const includeEdges = !noEdges;
-    console.log(`\nindexing graph with concurrency ${concurrency}, includeEdges: ${includeEdges}...`);
-    await semanticService.indexGraph(concurrency, includeEdges);
+
+    if (useCodeChunk) {
+        console.log(`\nindexing files using code-chunk with concurrency ${concurrency}...`);
+        await semanticService.indexWithCodeChunk(files, concurrency);
+    } else {
+        console.log(`\nindexing graph with concurrency ${concurrency}, includeEdges: ${includeEdges}...`);
+        await semanticService.indexGraph(concurrency, includeEdges);
+    }
 
     // 5. Query
     const query = "function that translates one type of analytical definition into a different logic-based format to allow for unified evaluation. This process involves parsing complex expressions to extract data dependencies, normalizing syntax for compatibility with a target engine, and dynamically expanding specialized aggregate keywords into a series of functional calls based on the discovered dependencies. ";
