@@ -14,13 +14,28 @@ export class GoogleGenAIEmbeddingProvider implements EmbeddingProvider {
         this.model = model;
     }
 
-    async embed(text: string): Promise<number[]> {
+    /**
+     * Estimates cost in USD.
+     * Based on average pricing of ~$0.000025 per character for text-embedding-004.
+     */
+    estimateCost(text: string): number {
+        // Pricing varies, but this is a safe upper bound estimate for text-embedding-004
+        return text.length * 0.000025;
+    }
+
+    async embed(text: string, options?: { taskType?: 'SEARCH_DOCUMENT' | 'SEARCH_QUERY' }): Promise<number[]> {
         const model = this.client.getGenerativeModel({ model: this.model });
         
-        // Task type explicit for better retrieval performance
+        // Map generic options to Google TaskType
+        // internal defaults: index = RETRIEVAL_DOCUMENT, query = RETRIEVAL_QUERY
+        let googleTaskType = TaskType.RETRIEVAL_DOCUMENT;
+        if (options?.taskType === 'SEARCH_QUERY') {
+            googleTaskType = TaskType.RETRIEVAL_QUERY;
+        }
+
         const result = await model.embedContent({
             content: { role: 'user', parts: [{ text }] },
-            taskType: TaskType.RETRIEVAL_DOCUMENT
+            taskType: googleTaskType
         });
 
         if (!result.embedding || !result.embedding.values) {

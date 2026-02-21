@@ -4,13 +4,22 @@ export interface EmbeddingProvider {
      * @param text The input text to embed.
      * @returns A promise resolving to the vector (array of numbers).
      */
-    embed(text: string): Promise<number[]>;
+    embed(text: string, options?: { taskType?: 'SEARCH_DOCUMENT' | 'SEARCH_QUERY' }): Promise<number[]>;
+
+    /**
+     * Estimated cost in USD for embedding the given text.
+     * Optional.
+     */
+    estimateCost?(text: string): number;
 }
 
 export interface VectorDocument {
     id: string;
     vector: number[];
-    metadata: Record<string, any>;
+    metadata: {
+        contentHash?: string; // SHA-256 hash for incremental indexing
+        [key: string]: any;
+    };
 }
 
 export interface SemanticQueryResult {

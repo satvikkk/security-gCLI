@@ -11,6 +11,10 @@ export class MockEmbeddingProvider implements EmbeddingProvider {
         this.dimensions = dimensions;
     }
 
+    estimateCost(text: string): number {
+        return 0; // Mock is free
+    }
+
     async embed(text: string): Promise<number[]> {
         // Deterministic pseudo-random vector based on string hash
         let hash = 0;

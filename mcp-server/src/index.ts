@@ -14,7 +14,7 @@ import path from 'path';
 import os from 'os';
 import { getAuditScope } from './filesystem.js';
 import { findLineNumbers } from './security.js';
-import { GraphBuilder, GraphService, SemanticSearchService, VectorStore, MockEmbeddingProvider, GoogleGenAIEmbeddingProvider } from './codemaps/index.js';
+import { GraphBuilder, GraphService, SemanticSearchService, VectorStore, MockEmbeddingProvider, GoogleGenAIEmbeddingProvider, OllamaEmbeddingProvider } from './codemaps/index.js';
 import { runPoc } from './poc.js';
 
 const server = new McpServer({
@@ -59,6 +59,12 @@ let embeddingProvider;
 if (googleApiKey) {
   console.log('[SemanticSearch] Using Google GenAI Embedding Provider (text-embedding-004)');
   embeddingProvider = new GoogleGenAIEmbeddingProvider(googleApiKey);
+} else if (process.env.OLLAMA_HOST || process.env.USE_OLLAMA || process.env.OLLAMA_MODEL) {
+  console.log('[SemanticSearch] Using Ollama Embedding Provider');
+  // Default to localhost:11434 and nomic-embed-text if not specified
+  const host = process.env.OLLAMA_HOST || 'http://localhost:11434';
+  const model = process.env.OLLAMA_MODEL || 'nomic-embed-text';
+  embeddingProvider = new OllamaEmbeddingProvider(host, model);
 } else {
   console.log('[SemanticSearch] No GOOGLE_API_KEY found. Using Mock Embedding Provider (for testing only).');
   embeddingProvider = new MockEmbeddingProvider();
@@ -73,10 +79,7 @@ async function ensureIndexReady() {
   if (indexReady) return;
 
   await vectorStore.load();
-  if (vectorStore.size === 0) {
-    console.log('[SemanticSearch] Vector store empty, triggering initial indexing...');
-    await semanticSearchService.indexGraph();
-  }
+  await semanticSearchService.indexGraph();
   indexReady = true;
 }
 
@@ -463,7 +466,7 @@ them by updating. DO NOT try to automatically update the dependencies in any cir
 
 server.tool(
   'semantic_search_nodes',
-  'Translates a natural language task intent into the best underlying structural root nodes for further graph traversal.',
+  'Given a natural language query, find the most relevant code snippets from the codebase.',
   {
     query: z.string().describe('The natural language search query (e.g. "how is authentication handled?").'),
     limit: z.number().optional().describe('Top K results to return (default: 5).'),

@@ -74,6 +74,13 @@ export class VectorStore {
     return scored.slice(0, k);
   }
 
+  /**
+   * Retrieves a document by ID.
+   */
+  getDocument(id: string): VectorDocument | undefined {
+    return this.documents.find(d => d.id === id);
+  }
+
   private cosineSimilarity(vecA: number[], vecB: number[]): number {
     let dotProduct = 0;
     let normA = 0;
