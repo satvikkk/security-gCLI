@@ -121,8 +121,12 @@ async function main() {
         console.log(`\nindexing files using code-chunk with concurrency ${concurrency}...`);
         await semanticService.indexWithCodeChunk(files, concurrency);
     } else {
-        console.log(`\nindexing graph with concurrency ${concurrency}, includeEdges: ${includeEdges}...`);
-        await semanticService.indexGraph(concurrency, includeEdges);
+        const components: ('code' | 'edges' | 'summary')[] = ['code'];
+        if (includeEdges) {
+            components.push('edges');
+        }
+        console.log(`\nindexing graph with concurrency ${concurrency}, components: ${components.join(',')}...`);
+        await semanticService.indexGraph(concurrency, components);
     }
 
     // 5. Query

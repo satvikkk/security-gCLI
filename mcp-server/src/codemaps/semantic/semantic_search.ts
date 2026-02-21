@@ -1,4 +1,4 @@
-import { EmbeddingProvider, VectorDocument, SemanticQueryResult } from "./types.js";
+import { EmbeddingProvider, VectorDocument, SemanticQueryResult, EmbeddingComponent } from "./types.js";
 import * as crypto from 'crypto';
 import { VectorStore } from "./vector_store.js";
 import { GraphService } from "../graph_service.js"; // Assuming relative path correct
@@ -34,7 +34,7 @@ export class SemanticSearchService {
    * 4. Upserting to the VectorStore.
    * 5. Saving the VectorStore to disk.
    */
-  async indexGraph(concurrencyLimit: number = 10, includeEdges: boolean = true): Promise<void> {
+  async indexGraph(concurrencyLimit: number = 10, components: EmbeddingComponent[] = ['code', 'edges']): Promise<void> {
     console.log("[SemanticSearch] Starting incremental graph indexing...");
     const nodes = Array.from(this.graphService.graph.nodes.values());
 
@@ -51,7 +51,7 @@ export class SemanticSearchService {
         continue;
       }
 
-      const payload = this.synthesizeNodePayload(node, includeEdges);
+      const payload = this.synthesizeNodePayload(node, components);
       const hash = crypto.createHash('sha256').update(payload).digest('hex');
 
       // Check if node exists and hash matches
@@ -116,13 +116,16 @@ export class SemanticSearchService {
   }
 
   /**
-   * Synthesizes a text payload that includes the node's code/doc
-   * PLUS its structural neighborhood (incoming/outgoing edges) conditionally.
+   * Synthesizes a text payload based on the requested EmbeddingComponents.
    */
-  private synthesizeNodePayload(node: GraphNode, includeEdges: boolean = true): string {
-    let edgesInfo = "";
+  private synthesizeNodePayload(node: GraphNode, components: EmbeddingComponent[] = ['code', 'edges']): string {
+    let payload = `Node ID: ${node.id}\nType: ${node.type}\nFile: ${node.id.split(':')[0]}\n`;
 
-    if (includeEdges) {
+    if (components.includes('summary') && node.llmSummary) {
+      payload += `\n[Summary]\n${node.llmSummary}\n`;
+    }
+
+    if (components.includes('edges')) {
       const incomingEdges = this.graphService.graph.inEdges.get(node.id) || [];
       const outgoingEdges = this.graphService.graph.edges.get(node.id) || [];
 
@@ -139,19 +142,14 @@ export class SemanticSearchService {
         .filter(x => x !== node.name)
         .join(", ");
 
-      edgesInfo = `\nCalled By (Incoming): ${calledBy || "None"}\nCalls Out To (Outgoing): ${callsOutTo || "None"}`;
+      payload += `\n[Structural Context]\nCalled By (Incoming): ${calledBy || "None"}\nCalls Out To (Outgoing): ${callsOutTo || "None"}\n`;
     }
 
-    // Construct the payload
-    // We emphasize the "Neighborhood" first so the model sees connections immediately
-    return `
-Node ID: ${node.id}
-Type: ${node.type}
-File: ${node.id.split(':')[0]}${edgesInfo}
+    if (components.includes('code')) {
+      payload += `\n[Code Snippet]\n${node.codeSnippet || node.documentation || "(No code content)"}\n`;
+    }
 
-Snippet:
-${node.codeSnippet || node.documentation || "(No code content)"}
-`.trim();
+    return payload.trim();
   }
 
   /**

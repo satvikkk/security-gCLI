@@ -1,3 +1,5 @@
+export type EmbeddingComponent = 'code' | 'edges' | 'summary';
+
 export interface EmbeddingProvider {
     /**
      * Generates a vector embedding for the given text.
