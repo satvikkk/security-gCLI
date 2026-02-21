@@ -3,3 +3,7 @@
 dist/
 node_modules/
 .DS_Store
+
+# Do not track JSON files inside .gemini_security directories
+**/.gemini_security/**/*.json
+**/.gemini_security_tests/**/*.json
