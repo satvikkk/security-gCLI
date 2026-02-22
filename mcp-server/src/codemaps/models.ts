@@ -12,6 +12,7 @@ export interface GraphNode {
   endLine: number;
   documentation: string;
   codeSnippet: string;
+  llmSummary?: string;
 }
 
 export interface GraphEdge {

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Codemaps Visualizer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <div class="app-container">
+    <div class="sidebar glass">
+      <h1>Codemaps Visualizer</h1>
+      <p class="subtitle">Interactive AST Graph Explorer</p>
+
+      <div class="control-group" style="margin-top: 20px; display: none;">
+        <label for="file-upload" class="custom-file-upload">
+          Upload codemap.json
+        </label>
+        <input id="file-upload" type="file" accept=".json" />
+      </div>
+      <p id="file-status" class="status-text">Loading static graph payload...</p>
+
+      <div class="control-group" style="margin-top: 20px;">
+        <input type="text" id="search-input" placeholder="Search node by name..." class="glass-input" />
+      </div>
+
+      <div class="legend" id="interactive-legend">
+        <h3>Node Types (Click Toggle)</h3>
+        <div class="legend-item" data-type="file"><span class="color-box node-file"></span> File / Module</div>
+        <div class="legend-item" data-type="class,interface"><span class="color-box node-class"></span> Class /
+          Interface</div>
+        <div class="legend-item" data-type="function,method"><span class="color-box node-function"></span> Function /
+          Method</div>
+        <div class="legend-item" data-type="variable"><span class="color-box node-variable"></span> Variable / Symbol
+        </div>
+        <div class="legend-item" data-type="module"><span class="color-box node-dependency"></span> External Dependency
+        </div>
+
+        <h3 style="margin-top: 15px;">Edge Types (Click Toggle)</h3>
+        <div class="legend-item" data-edge="true" data-type="calls,imports"><span class="color-line edge-calls"></span>
+          Calls / Imports</div>
+        <div class="legend-item" data-edge="true" data-type="contains,inherits"><span
+            class="color-line edge-contains"></span> Contains / Inherits</div>
+      </div>
+
+      <div id="details-panel" class="details-panel glass hidden">
+        <h3 id="details-title">Node Details</h3>
+        <p><strong>Type:</strong> <span id="details-type"></span></p>
+        <p><strong>File:</strong> <span id="details-file"></span></p>
+        <p><strong>Lines:</strong> <span id="details-lines"></span></p>
+        <pre id="details-snippet"></pre>
+      </div>
+    </div>
+
+    <div id="cy" class="cy-container">
+      <div id="welcome-text" class="welcome-text">
+        Graph is rendering, please wait...
+      </div>
+    </div>
+  </div>
+
+  <!-- Bypassing NPM/AirLock blocks by fetching directly from stable CDNs -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+  <!-- fcose Layout (Fast Compound Spring Embedder) - Built specifically for nested graphs -->
+  <script src="https://unpkg.com/layout-base/layout-base.js"></script>
+  <script src="https://unpkg.com/cose-base/cose-base.js"></script>
+  <script src="https://unpkg.com/cytoscape-fcose/cytoscape-fcose.js"></script>
+  <!-- Expand/Collapse plugin for VPs view -->
+  <script src="https://unpkg.com/cytoscape-expand-collapse/cytoscape-expand-collapse.js"></script>
+
+  <script src="data.js"></script>
+  <script src="main.js"></script>
+</body>
+
+</html>
