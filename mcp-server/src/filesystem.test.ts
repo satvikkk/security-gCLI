@@ -7,11 +7,22 @@
 import { expect, describe, it, beforeAll, afterAll } from 'vitest';
 import { isGitHubRepository, getAuditScope } from './filesystem';
 import { execSync } from 'child_process';
+import * as os from 'os';
+import * as path from 'path';
 import * as fs from 'fs';
 
 describe('filesystem', () => {
+  let originalCwd: string;
+  let tempDir: string;
+
   beforeAll(() => {
+    originalCwd = process.cwd();
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fs-test-'));
+    process.chdir(tempDir);
+
     execSync('git init');
+    execSync('git config user.email "test@example.com"');
+    execSync('git config user.name "Test User"');
     fs.writeFileSync('test.txt', 'hello');
     execSync('git add .');
     execSync('git commit -m "initial commit"');
@@ -19,10 +30,8 @@ describe('filesystem', () => {
   });
 
   afterAll(() => {
-    // Cleanup created files and git repository if they exist for all tests
-    if (fs.existsSync('test.txt')) fs.unlinkSync('test.txt');
-    if (fs.existsSync('branch-test.txt')) fs.unlinkSync('branch-test.txt');
-    execSync('rm -rf .git');
+    process.chdir(originalCwd);
+    fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
   it('should return true if the directory is a github repository', () => {

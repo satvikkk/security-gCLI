@@ -76,7 +76,7 @@ describe('Semantic Search', () => {
             const textA = callArgsA![0];
 
             expect(textA).toContain('Calls Out To (Outgoing): funcB');
-            expect(textA).toContain('Snippet:\nfunction A(){}');
+            expect(textA).toContain('[Code Snippet]\nfunction A(){}');
 
             // Check Node B payload
             // Node B is called by Node A, so payload should mention "funcA" in 'Called By'
@@ -96,7 +96,7 @@ describe('Semantic Search', () => {
 
             // Mock vector store query to return this node
             vi.spyOn(vectorStore, 'query').mockResolvedValue([
-                { document: { id: nodeA.id, vector: [1, 1, 1], metadata: {} }, score: 0.95 }
+                { document: { id: nodeA.id, vector: [1, 1, 1], metadata: { rawSnippet: 'target()' } }, score: 0.95 }
             ]);
 
             const results = await service.searchNodes('find target');
