@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getSecurityFixContext, SecurityFixArgs } from './security_fix.js';
+import { getSecurityPatchContextMessages, SecurityPatchContextArgs } from './security_patch_context.js';
 import { VulnerabilityType } from '../knowledge.js';
 
 // Mock knowledge loader
@@ -32,7 +32,7 @@ vi.mock('fs', async () => ({
   },
 }));
 
-describe('getSecurityFixContext', () => {
+describe('getSecurityPatchContextMessages', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -41,14 +41,14 @@ describe('getSecurityFixContext', () => {
     knowledgeMocks.loadKnowledge.mockResolvedValue('## Remediation Guide\nUse path.resolve');
     fsMocks.readFile.mockResolvedValue('const unsafe = req.query.path;');
 
-    const args: SecurityFixArgs = {
+    const args: SecurityPatchContextArgs = {
       vulnerability: VulnerabilityType.PathTraversal,
       filePath: '/app/server.ts',
       pocFilePath: '',
       vulnerabilityContext: 'Line 10: Unsafe input',
     };
 
-    const result = await getSecurityFixContext(args);
+    const result = await getSecurityPatchContextMessages(args);
 
     expect(result.content).toHaveLength(1);
     const content = result.content[0].text;
@@ -65,14 +65,14 @@ describe('getSecurityFixContext', () => {
     knowledgeMocks.loadKnowledge.mockResolvedValue('## Remediation Guide');
     fsMocks.readFile.mockRejectedValue(new Error('Access denied'));
 
-    const args: SecurityFixArgs = {
+    const args: SecurityPatchContextArgs = {
       vulnerability: VulnerabilityType.PathTraversal,
       filePath: '/protected/file.ts',
       pocFilePath: '',
       vulnerabilityContext: 'Line 10: Unsafe input',
     };
 
-    const result = await getSecurityFixContext(args);
+    const result = await getSecurityPatchContextMessages(args);
     const content = result.content[0].text;
 
     expect(content).toContain('Error reading file: Access denied');

@@ -8,19 +8,19 @@ import { z } from 'zod';
 import { loadKnowledge, VulnerabilityType } from '../knowledge.js';
 import { promises as fs } from 'fs';
 
-export const SECURITY_FIX_TOOL_NAME = 'security:fix';
-export const SECURITY_FIX_TOOL_DESCRIPTION = 'Fixes a security vulnerability in a given file using best practices from the knowledge base. You MUST call this tool BEFORE attempting to fix any vulnerabilities.';
+export const SECURITY_PATCH_CONTEXT_TOOL_NAME = 'security_patch_context';
+export const SECURITY_PATCH_CONTEXT_TOOL_DESCRIPTION = 'Fetches context about a security vulnerability in a given file using best practices from the knowledge base. You MUST call this tool BEFORE attempting to patch any vulnerabilities.';
 
-export const SecurityFixArgsSchema = z.object({
-  vulnerability: z.nativeEnum(VulnerabilityType).describe('The type of vulnerability to fix. You must infer this from the user\'s request or the problem context.'),
-  filePath: z.string().describe('The absolute path to the file that needs fixing. You must provide the exact path.'),
+export const SecurityPatchContextArgsSchema = z.object({
+  vulnerability: z.nativeEnum(VulnerabilityType).describe('The type of vulnerability to patch. You must infer this from the user\'s request or the problem context.'),
+  filePath: z.string().describe('The absolute path to the file that needs patching. You must provide the exact path.'),
   pocFilePath: z.string().describe('The absolute path to the PoC file that demonstrates the vulnerability. You must provide the exact path, or an empty string if the PoC does not exist.'),
   vulnerabilityContext: z.string().describe('A description of the vulnerability and where it occurs (line numbers, etc). You must extract this from the context.'),
 });
 
-export type SecurityFixArgs = z.infer<typeof SecurityFixArgsSchema>;
+export type SecurityPatchContextArgs = z.infer<typeof SecurityPatchContextArgsSchema>;
 
-export async function getSecurityFixContext(args: SecurityFixArgs) {
+export async function getSecurityPatchContextMessages(args: SecurityPatchContextArgs) {
   const { vulnerability, filePath, pocFilePath, vulnerabilityContext } = args;
   const knowledge = await loadKnowledge(vulnerability);
   let fileContent = '';
@@ -58,7 +58,7 @@ ${fileContent || 'No content available.'}
 \`\`\`
 
 **Next Steps:**
-Invoke the security-patcher skill to apply the fix.
+Invoke the security-patcher skill to apply the patch.
 `,
       },
     ],

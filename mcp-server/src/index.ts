@@ -18,7 +18,7 @@ import { findLineNumbers } from './security.js';
 import { parseMarkdownToDict } from './parser.js';
 import { SECURITY_DIR_NAME, POC_DIR_NAME, PATH_TRAVERSAL_TEMP_FILE } from './constants.js';
 import { loadKnowledge, VulnerabilityType } from './knowledge.js';
-import { SECURITY_FIX_TOOL_NAME, SECURITY_FIX_TOOL_DESCRIPTION, SecurityFixArgsSchema, getSecurityFixContext } from './tools/security_fix.js';
+import { SECURITY_PATCH_CONTEXT_TOOL_NAME, SECURITY_PATCH_CONTEXT_TOOL_DESCRIPTION, SecurityPatchContextArgsSchema, getSecurityPatchContextMessages } from './tools/security_patch_context.js';
 
 import { runPoc } from './poc.js';
 
@@ -274,7 +274,7 @@ ${language}
 3.  **Run PoC:**
     *   Use the 'run_poc' tool with the absolute file path to the generated '${pocFileName}' to execute the code.
     *   Analyze the output to verify if the vulnerability is reproducible.
-    *   If reproducible, use the ask_user tool to ask if they want to fix it.`,
+    *   If reproducible, use the ask_user tool to ask if they want to patch it.`,
         },
       ],
     };
@@ -294,7 +294,7 @@ server.registerPrompt(
         content: {
           type: 'text',
           text: `You are a highly skilled senior security analyst. First, you must greet the user. Then perform the scan.
-                Your primary task is to conduct a security audit of the vulnerabilities in the dependencies of this project. You are required to only conduct the scan, not fix the vulnerabilities.
+                Your primary task is to conduct a security audit of the vulnerabilities in the dependencies of this project. You are required to only conduct the scan, not patch the vulnerabilities.
 
                 **Available Tools**
                 The following tools are available to you from osvScanner MCP server:
@@ -312,12 +312,12 @@ server.registerPrompt(
                 **Step 2: Analyse the report**
 
                 Go through the report and determine the relevant project lockfiles (ignoring lockfiles in test directories),
-                and prioritise which vulnerability to fix based on the description and severity.
+                and prioritise which vulnerability to patch based on the description and severity.
                 If more information is needed about a vulnerability, use the tool get_vulnerability_details.
 
                 **Step 3: Prioritisation**
 
-                Give advice on which vulnerabilities to prioritise fixing, and general advice on how to go about fixing
+                Give advice on which vulnerabilities to prioritise patching, and general advice on how to go about patching
                 them by updating. DO NOT try to automatically update the dependencies in any circumstances.`
         },
       },
@@ -326,10 +326,10 @@ server.registerPrompt(
 );
 
 server.tool(
-  SECURITY_FIX_TOOL_NAME,
-  SECURITY_FIX_TOOL_DESCRIPTION,
-  SecurityFixArgsSchema.shape as any,
-  getSecurityFixContext as any
+  SECURITY_PATCH_CONTEXT_TOOL_NAME,
+  SECURITY_PATCH_CONTEXT_TOOL_DESCRIPTION,
+  SecurityPatchContextArgsSchema.shape as any,
+  getSecurityPatchContextMessages as any
 );
 
 server.tool(
