@@ -9,7 +9,7 @@ import { loadKnowledge, VulnerabilityType } from '../knowledge.js';
 import { promises as fs } from 'fs';
 
 export const SECURITY_PATCH_CONTEXT_TOOL_NAME = 'security_patch_context';
-export const SECURITY_PATCH_CONTEXT_TOOL_DESCRIPTION = 'Fetches context about a security vulnerability in a given file using best practices from the knowledge base. You MUST call this tool BEFORE attempting to patch any vulnerabilities.';
+export const SECURITY_PATCH_CONTEXT_TOOL_DESCRIPTION = 'Fetches context about a security vulnerability in a given file. Do not call this tool directly from a user prompt; instead, you MUST invoke the `security-patcher` skill, which will orchestrate the use of this tool and the patching process.';
 
 export const SecurityPatchContextArgsSchema = z.object({
   vulnerability: z.nativeEnum(VulnerabilityType).describe('The type of vulnerability to patch. You must infer this from the user\'s request or the problem context.'),
