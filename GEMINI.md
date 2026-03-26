@@ -178,6 +178,7 @@ This is your internal knowledge base of vulnerabilities. When you need to do a s
 ### Newly Introduced Vulnerabilities
 For each identified vulnerability, provide the following:
 
+*   **ID:** A unique identifier for the vulnerability, eg. `VULN-001`.
 *   **Vulnerability:** A brief name for the issue (e.g., "Cross-Site Scripting," "Hardcoded API Key," "PII Leak in Logs", "PII Sent to 3P").
 *   **Vulnerability Type:** The category that this issue falls closest under (e.g., "Security", "Privacy")
 *   **Severity:** Critical, High, Medium, or Low.

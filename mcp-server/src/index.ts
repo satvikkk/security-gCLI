@@ -10,13 +10,15 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { promises as fs } from 'fs';
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import { getAuditScope, detectProjectLanguage } from './filesystem.js';
 import { findLineNumbers } from './security.js';
 import { parseMarkdownToDict } from './parser.js';
 import { SECURITY_DIR_NAME, POC_DIR_NAME, PATH_TRAVERSAL_TEMP_FILE } from './constants.js';
+import { loadKnowledge, VulnerabilityType } from './knowledge.js';
+import { SECURITY_PATCH_CONTEXT_TOOL_NAME, SECURITY_PATCH_CONTEXT_TOOL_DESCRIPTION, SecurityPatchContextArgsSchema, getSecurityPatchContextMessages } from './tools/security_patch_context.js';
 
 import { runPoc } from './poc.js';
 
@@ -65,7 +67,36 @@ server.tool(
   {
     filePath: z.string().describe('The absolute path to the PoC file to run.'),
   } as any,
-  (input: { filePath: string }) => runPoc(input)
+  (async (input: { filePath: string }) => {
+    const result = await runPoc(input);
+
+    if (result.isSecurityError) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Security Error: ${result.error}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    let text = `## PoC Execution\n`;
+    if (result.error) {
+      text += `**Error:** ${result.error}\n\n`;
+    }
+    text += `#### stdout\n\`\`\`\n${result.stdout}\n\`\`\`\n\n#### stderr\n\`\`\`\n${result.stderr}\n\`\`\`\n`;
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text,
+        },
+      ],
+    };
+  }) as any
 );
 
 server.tool(
@@ -148,13 +179,13 @@ server.registerPrompt(
 server.registerTool(
   'security:setup_poc',
   {
-    description: 'Sets up the necessary workspace, directories, and dependencies to test a vulnerability. You MUST call this tool BEFORE attempting to write any PoC code. This tool will execute the setup and return the exact instructions, context, and directory paths you need to actually generate the PoC script. If multiple vulnerabilities are present, ask the user which one to test.',
+    description: 'Sets up the necessary workspace, directories, and dependencies to test a vulnerability. You MUST call this tool BEFORE attempting to write any PoC code. This tool will execute the setup and return the exact instructions, context, and directory paths you need to actually generate the PoC script. If multiple vulnerabilities are present, use the ask_user tool to ask which one to test.',
     inputSchema: z.object({
       problemStatement: z.string().describe(
         'The raw description of the security problem or vulnerability provided by the user.'
       ),
 
-      vulnerabilityType: z.enum(['path_traversal', 'other']).describe(
+      vulnerabilityType: z.enum([VulnerabilityType.PathTraversal, VulnerabilityType.Other]).describe(
         'You must infer this from the problemStatement if not provided. If the problem involves reading/writing files outside intended directories, select "path_traversal". Otherwise, select "other".'
       ),
 
@@ -173,60 +204,23 @@ server.registerTool(
     await fs.mkdir(pocDir, { recursive: true });
 
 
-    const execAsync = promisify(exec);
-
-    // Ensure dependency files exist and environment is setup based on language
-    if (language === 'Node.js') {
-      const packageJsonPath = path.join(pocDir, 'package.json');
-      try {
-        await fs.access(packageJsonPath);
-      } catch {
-        try {
-          // Initialize package.json with defaults
-          await execAsync('npm init -y', { cwd: pocDir });
-        } catch {
-          // Fallback to basic JSON if npm init fails
-          await fs.writeFile(packageJsonPath, JSON.stringify({}, null, 2));
-        }
-      }
-    } else if (language === 'Python') {
-      const requirementsTxtPath = path.join(pocDir, 'requirements.txt');
-      try {
-        await fs.access(requirementsTxtPath);
-      } catch {
-        await fs.writeFile(requirementsTxtPath, '');
-      }
-
-      // Create venv if it doesn't exist
-      const venvDir = path.join(pocDir, '.venv');
-      try {
-        await fs.access(venvDir);
-      } catch {
-        try {
-          await execAsync('python3 -m venv .venv', { cwd: pocDir });
-        } catch {
-          try {
-            await execAsync('python -m venv .venv', { cwd: pocDir });
-          } catch {
-            // Ignore if python is not installed or venv fails
-          }
-        }
-      }
-    } else if (language === 'Go') {
-      // Initialize Go module if not exists
-      const goModPath = path.join(pocDir, 'go.mod');
-      try {
-        await fs.access(goModPath);
-      } catch {
-        try {
-          await execAsync('go mod init poc', { cwd: pocDir });
-        } catch {
-          // Ignore error if go is not installed or init fails
-        }
-      }
-    }
+    // The PoC directory is created for isolated scratchwork.
+    // Isolated execution is managed via the scan_dependencies setup guidelines.
 
     let extraInstructions = '';
+    const timestamp = Date.now();
+    let ext = 'js'; // Default extension
+
+    if (language === 'Node.js') {
+      ext = 'ts';
+    } else if (language === 'Python') {
+      ext = 'py';
+    } else if (language === 'Go') {
+      ext = 'go';
+    }
+
+    const pocFileName = `poc_${vulnerabilityType}_${timestamp}.${ext}`;
+
     if (vulnerabilityType === 'path_traversal') {
       // Create a temp file in the workspace root for traversal test
       const tempFilePath = path.join(process.cwd(), PATH_TRAVERSAL_TEMP_FILE);
@@ -269,15 +263,18 @@ ${language}
 
 **Your Next Steps:**
 
-1.  **Generate PoC:**
-    *   The '${POC_DIR_NAME}' directory in '${SECURITY_DIR_NAME}' has been created.
-    *   Based on the project language (${language}), generate a script that demonstrates the vulnerability under the '${SECURITY_DIR_NAME}/${POC_DIR_NAME}/' directory.
-    ${extraInstructions}
-    *   The script should import the user's vulnerable file(s), and demonstrate the vulnerability in their code.
+1.  **Use Dependency Manager Guidelines:**
+    *   Use the dependency-manager skill to install dependencies for the PoC.
 
-2.  **Run PoC:**
-    *   Use the 'run_poc' tool with absolute file paths to execute the code.
-    *   Analyze the output to verify if the vulnerability is reproducible.`,
+2.  **Generate PoC:**
+    *   The '${POC_DIR_NAME}' directory in '${SECURITY_DIR_NAME}' has been created.
+    *   Generate your standalone script named '${pocFileName}' under '${SECURITY_DIR_NAME}/${POC_DIR_NAME}/'.
+    ${extraInstructions}
+
+3.  **Run PoC:**
+    *   Use the 'run_poc' tool with the absolute file path to the generated '${pocFileName}' to execute the code.
+    *   Analyze the output to verify if the vulnerability is reproducible.
+    *   If reproducible, use the ask_user tool to ask if they want to patch it.`,
         },
       ],
     };
@@ -297,7 +294,7 @@ server.registerPrompt(
         content: {
           type: 'text',
           text: `You are a highly skilled senior security analyst. First, you must greet the user. Then perform the scan.
-                Your primary task is to conduct a security audit of the vulnerabilities in the dependencies of this project. You are required to only conduct the scan, not fix the vulnerabilities.
+                Your primary task is to conduct a security audit of the vulnerabilities in the dependencies of this project. You are required to only conduct the scan, not patch the vulnerabilities.
 
                 **Available Tools**
                 The following tools are available to you from osvScanner MCP server:
@@ -315,18 +312,90 @@ server.registerPrompt(
                 **Step 2: Analyse the report**
 
                 Go through the report and determine the relevant project lockfiles (ignoring lockfiles in test directories),
-                and prioritise which vulnerability to fix based on the description and severity.
+                and prioritise which vulnerability to patch based on the description and severity.
                 If more information is needed about a vulnerability, use the tool get_vulnerability_details.
 
                 **Step 3: Prioritisation**
 
-                Give advice on which vulnerabilities to prioritise fixing, and general advice on how to go about fixing
+                Give advice on which vulnerabilities to prioritise patching, and general advice on how to go about patching
                 them by updating. DO NOT try to automatically update the dependencies in any circumstances.`
         },
       },
     ],
   })
 );
+
+server.tool(
+  SECURITY_PATCH_CONTEXT_TOOL_NAME,
+  SECURITY_PATCH_CONTEXT_TOOL_DESCRIPTION,
+  SecurityPatchContextArgsSchema.shape as any,
+  getSecurityPatchContextMessages as any
+);
+
+server.tool(
+  'install_dependencies',
+  'Executes a script file inside workspace.',
+  {
+    scriptPath: z.string().describe('Absolute path to the script file to execute.'),
+    targetFile: z.string().describe('The target file requiring dependencies.'),
+    cwd: z.string().optional().describe('Execution directory (optional. overrides calculation).'),
+  } as any,
+  (async (input: { scriptPath: string; targetFile: string; cwd?: string }) => {
+    try {
+      const execFileAsync = promisify(execFile);
+      let executionDir = input.cwd;
+
+      if (!executionDir) {
+        const startDir = path.dirname(input.targetFile);
+        executionDir = startDir;
+
+        let current = startDir;
+        for (let i = 0; i < 5; i++) {
+          try {
+            const hasNode = await fs.access(path.join(current, 'package.json')).then(() => true).catch(() => false);
+            const hasPy = await fs.access(path.join(current, 'requirements.txt')).then(() => true).catch(() => false);
+            if (hasNode || hasPy) {
+              executionDir = current;
+              break;
+            }
+          } catch { }
+          const parent = path.dirname(current);
+          if (parent === current) break;
+          current = parent;
+        }
+      }
+
+      await fs.chmod(input.scriptPath, 0o755);
+      const output = await execFileAsync(input.scriptPath, { cwd: executionDir });
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              stdout: output.stdout,
+              stderr: output.stderr,
+            }),
+          },
+        ],
+      };
+    } catch (error: any) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              error: error.message || String(error),
+              stdout: error.stdout || '',
+              stderr: error.stderr || '',
+            }),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }) as any
+);
+
 async function startServer() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
