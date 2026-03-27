@@ -19,8 +19,10 @@ import { parseMarkdownToDict } from './parser.js';
 import { SECURITY_DIR_NAME, POC_DIR_NAME, PATH_TRAVERSAL_TEMP_FILE } from './constants.js';
 import { loadKnowledge, VulnerabilityType } from './knowledge.js';
 import { SECURITY_PATCH_CONTEXT_TOOL_NAME, SECURITY_PATCH_CONTEXT_TOOL_DESCRIPTION, SecurityPatchContextArgsSchema, getSecurityPatchContextMessages } from './tools/security_patch_context.js';
+import { POC_CONTEXT_TOOL_NAME, POC_CONTEXT_TOOL_DESCRIPTION, PocContextArgsSchema, getPocContext } from './tools/poc_context.js';
+import { RUN_POC_TOOL_NAME, RUN_POC_TOOL_DESCRIPTION, RunPocArgsSchema, getRunPocMessages } from './tools/run_poc.js';
 
-import { runPoc } from './poc.js';
+// import { runPoc } from './poc.js';
 
 const server = new McpServer({
   name: 'gemini-cli-security',
@@ -62,41 +64,10 @@ server.tool(
 );
 
 server.tool(
-  'run_poc',
-  'Runs the generated PoC code.',
-  {
-    filePath: z.string().describe('The absolute path to the PoC file to run.'),
-  } as any,
-  (async (input: { filePath: string }) => {
-    const result = await runPoc(input);
-
-    if (result.isSecurityError) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Security Error: ${result.error}`,
-          },
-        ],
-        isError: true,
-      };
-    }
-
-    let text = `## PoC Execution\n`;
-    if (result.error) {
-      text += `**Error:** ${result.error}\n\n`;
-    }
-    text += `#### stdout\n\`\`\`\n${result.stdout}\n\`\`\`\n\n#### stderr\n\`\`\`\n${result.stderr}\n\`\`\`\n`;
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text,
-        },
-      ],
-    };
-  }) as any
+  RUN_POC_TOOL_NAME,
+  RUN_POC_TOOL_DESCRIPTION,
+  RunPocArgsSchema.shape as any,
+  getRunPocMessages as any
 );
 
 server.tool(
@@ -107,16 +78,16 @@ server.tool(
     try {
       const reportPath = path.join(process.cwd(), `${SECURITY_DIR_NAME}/DRAFT_SECURITY_REPORT.md`);
       const outputPath = path.join(process.cwd(), `${SECURITY_DIR_NAME}/security_report.json`);
-      
+
       const content = await fs.readFile(reportPath, 'utf-8');
       const results = parseMarkdownToDict(content);
 
       await fs.writeFile(outputPath, JSON.stringify(results, null, 2));
 
       return {
-        content: [{ 
-          type: 'text', 
-          text: `Successfully created JSON report at ${outputPath}` 
+        content: [{
+          type: 'text',
+          text: `Successfully created JSON report at ${outputPath}`
         }]
       };
     } catch (error) {
@@ -142,12 +113,12 @@ server.registerPrompt(
   (args: any) => {
     const { notePath, content } = args;
     return {
-    messages: [
-      {
-        role: 'user' as const,
-        content: {
-          type: 'text' as const,
-          text: `You are a helpful assistant that helps users maintain notes. Your task is to add a new entry to the notes file at '${SECURITY_DIR_NAME}/${notePath}'.
+      messages: [
+        {
+          role: 'user' as const,
+          content: {
+            type: 'text' as const,
+            text: `You are a helpful assistant that helps users maintain notes. Your task is to add a new entry to the notes file at '${SECURITY_DIR_NAME}/${notePath}'.
 
         You MUST use the 'ReadFile' and 'WriteFile' tools.
 
@@ -169,116 +140,20 @@ server.registerPrompt(
                 *   Use the 'WriteFile' tool to create the new file with the complete initial content.
 
         Your primary goal is to maintain strict consistency with the format of the note file. Do not introduce any formatting changes.`,
+          },
         },
-      },
-    ],
+      ],
     }
   },
 );
 
 server.registerTool(
-  'security:setup_poc',
+  POC_CONTEXT_TOOL_NAME,
   {
-    description: 'Sets up the necessary workspace, directories, and dependencies to test a vulnerability. You MUST call this tool BEFORE attempting to write any PoC code. This tool will execute the setup and return the exact instructions, context, and directory paths you need to actually generate the PoC script. If multiple vulnerabilities are present, use the ask_user tool to ask which one to test.',
-    inputSchema: z.object({
-      problemStatement: z.string().describe(
-        'The raw description of the security problem or vulnerability provided by the user.'
-      ),
-
-      vulnerabilityType: z.enum([VulnerabilityType.PathTraversal, VulnerabilityType.Other]).describe(
-        'You must infer this from the problemStatement if not provided. If the problem involves reading/writing files outside intended directories, select "path_traversal". Otherwise, select "other".'
-      ),
-
-      sourceCodeLocation: z.string().describe(
-        'The exact file path and function/line number of the vulnerable code. You must extract this from the problemStatement. If the problemStatement does not contain the exact file path, you MUST use your search tools to find the vulnerable file in the codebase BEFORE calling this tool.'
-      ),
-    }) as any,
+    description: POC_CONTEXT_TOOL_DESCRIPTION,
+    inputSchema: PocContextArgsSchema as any,
   },
-  async (args: { problemStatement: string; vulnerabilityType: string; sourceCodeLocation: string }) => {
-    const { problemStatement, vulnerabilityType, sourceCodeLocation } = args;
-
-    const language = await detectProjectLanguage();
-    const pocDir = path.join(process.cwd(), SECURITY_DIR_NAME, POC_DIR_NAME);
-
-    // Ensure PoC directory exists
-    await fs.mkdir(pocDir, { recursive: true });
-
-
-    // The PoC directory is created for isolated scratchwork.
-    // Isolated execution is managed via the scan_dependencies setup guidelines.
-
-    let extraInstructions = '';
-    const timestamp = Date.now();
-    let ext = 'js'; // Default extension
-
-    if (language === 'Node.js') {
-      ext = 'ts';
-    } else if (language === 'Python') {
-      ext = 'py';
-    } else if (language === 'Go') {
-      ext = 'go';
-    }
-
-    const pocFileName = `poc_${vulnerabilityType}_${timestamp}.${ext}`;
-
-    if (vulnerabilityType === 'path_traversal') {
-      // Create a temp file in the workspace root for traversal test
-      const tempFilePath = path.join(process.cwd(), PATH_TRAVERSAL_TEMP_FILE);
-      await fs.writeFile(tempFilePath, 'This is a path traversal test file to verify the vulnerability.');
-      extraInstructions = `
-        *   **Path Traversal Verification:**
-            *   I have created a temporary file at '${tempFilePath}' for you to use as a target.
-            *   Your PoC script (running inside '${pocDir}') should attempt to read this file using the vulnerability.
-            *   Construct the path to this file relative to the PoC directory (e.g., attempt to traverse up to the workspace root).
-            *   You DO NOT need to create or delete this file; I have handled that.
-      `;
-    }
-
-  // Returns standard MCP tool content array
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          // Rephrased slightly to act as an immediate command directive for the LLM
-          text: `You are a security expert. Your task is to generate a Proof-of-Concept (PoC) for a vulnerability for ${language} projects.
-
-**Context Provided:**
-* Problem Statement:
-\`\`\`
-${problemStatement}
-\`\`\`
-* Source Code Location:
-\`\`\`
-${sourceCodeLocation}
-\`\`\`
-* Vulnerability Type:
-\`\`\`
-${vulnerabilityType}
-\`\`\`
-* Detected Language:
-\`\`\`
-${language}
-\`\`\`
-
-
-**Your Next Steps:**
-
-1.  **Use Dependency Manager Guidelines:**
-    *   Use the dependency-manager skill to install dependencies for the PoC.
-
-2.  **Generate PoC:**
-    *   The '${POC_DIR_NAME}' directory in '${SECURITY_DIR_NAME}' has been created.
-    *   Generate your standalone script named '${pocFileName}' under '${SECURITY_DIR_NAME}/${POC_DIR_NAME}/'.
-    ${extraInstructions}
-
-3.  **Run PoC:**
-    *   Use the 'run_poc' tool with the absolute file path to the generated '${pocFileName}' to execute the code.
-    *   Analyze the output to verify if the vulnerability is reproducible.
-    *   If reproducible, use the ask_user tool to ask if they want to patch it.`,
-        },
-      ],
-    };
-  },
+  getPocContext as any
 );
 
 server.registerPrompt(

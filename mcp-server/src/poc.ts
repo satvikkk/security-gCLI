@@ -31,6 +31,13 @@ export async function runPoc(
 ): Promise<RunPocResult> {
   try {
     const pocDir = dependencies.path.dirname(filePath);
+    const pocFileName = dependencies.path.basename(filePath);
+
+    // Only write the path traversal temp file if the PoC is actually for a path traversal vulnerability.
+    if (pocFileName.includes('path_traversal')) {
+      const tempFilePath = dependencies.path.join(process.cwd(), PATH_TRAVERSAL_TEMP_FILE);
+      await dependencies.fs.writeFile(tempFilePath, 'This is a path traversal test file to verify the vulnerability.');
+    }
 
     // Validate that the filePath is within the safe PoC directory
     const resolvedFilePath = dependencies.path.resolve(filePath);
