@@ -63,3 +63,4 @@ Invoke the security-patcher skill to apply the patch.
       },
     ],
   };
+}

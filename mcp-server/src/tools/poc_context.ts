@@ -52,12 +52,10 @@ export async function getPocContext(args: PocContextArgs) {
   const pocFileName = `poc_${vulnerabilityType}_${timestamp}.${ext}`;
 
   if (vulnerabilityType === 'path_traversal') {
-    // Create a temp file in the workspace root for traversal test
     const tempFilePath = path.join(process.cwd(), PATH_TRAVERSAL_TEMP_FILE);
-    await fs.writeFile(tempFilePath, 'This is a path traversal test file to verify the vulnerability.');
     extraInstructions = [
       '*   **Path Traversal Verification:**',
-      `    *   I have created a temporary file at '${tempFilePath}' for you to use as a target.`,
+      `    *   A temporary file will automatically be created at '${tempFilePath}' whenever you execute the PoC.`,
       `    *   Your PoC script (running inside '${pocDir}') should attempt to read this file using the vulnerability.`,
       '    *   Construct the path to this file relative to the PoC directory (e.g., attempt to traverse up to the workspace root).',
       '    *   You DO NOT need to create or delete this file; I have handled that.',

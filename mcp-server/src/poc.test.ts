@@ -22,6 +22,7 @@ describe('runPoc', () => {
       const idx = p.lastIndexOf('.');
       return idx !== -1 ? p.substring(idx) : '';
     },
+    basename: (p: string) => p.substring(p.lastIndexOf('/') + 1),
     sep: '/',
   };
 
@@ -34,6 +35,7 @@ describe('runPoc', () => {
       { 
         fs: { 
           access: vi.fn().mockRejectedValue(new Error()),
+          writeFile: vi.fn(),
         } as any, 
         path: mockPath as any, 
         execAsync: mockExecAsync as any, 
@@ -54,7 +56,7 @@ describe('runPoc', () => {
 
     const result = await runPoc(
       { filePath: `${POC_DIR}/test.py` },
-      { fs: { access: vi.fn().mockRejectedValue(new Error()) } as any, path: mockPath as any, execAsync: mockExecAsync as any, execFileAsync: mockExecFileAsync as any }
+      { fs: { access: vi.fn().mockRejectedValue(new Error()), writeFile: vi.fn() } as any, path: mockPath as any, execAsync: mockExecAsync as any, execFileAsync: mockExecFileAsync as any }
     );
 
     expect(mockExecAsync).toHaveBeenCalledWith(expect.stringContaining('python3 -m venv'));
@@ -70,7 +72,7 @@ describe('runPoc', () => {
 
     const result = await runPoc(
       { filePath: `${POC_DIR}/test.go` },
-      { fs: { access: vi.fn().mockRejectedValue(new Error()) } as any, path: mockPath as any, execAsync: mockExecAsync as any, execFileAsync: mockExecFileAsync as any }
+      { fs: { access: vi.fn().mockRejectedValue(new Error()), writeFile: vi.fn() } as any, path: mockPath as any, execAsync: mockExecAsync as any, execFileAsync: mockExecFileAsync as any }
     );
 
     expect(mockExecAsync).toHaveBeenCalledTimes(2);
@@ -111,7 +113,7 @@ describe('runPoc', () => {
 
     const result = await runPoc(
       { filePath: '/tmp/malicious.js' },
-      { fs: {} as any, path: mockPath as any, execAsync: mockExecAsync as any, execFileAsync: mockExecFileAsync as any }
+      { fs: { writeFile: vi.fn() } as any, path: mockPath as any, execAsync: mockExecAsync as any, execFileAsync: mockExecFileAsync as any }
     );
 
     expect(result.isSecurityError).toBe(true);
