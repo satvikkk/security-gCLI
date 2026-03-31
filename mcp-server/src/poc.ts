@@ -4,42 +4,51 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
-import { POC_DIR } from './constants.js';
+import { POC_DIR, PATH_TRAVERSAL_TEMP_FILE } from './constants.js';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
+
+
+export interface RunPocResult {
+  stdout: string;
+  stderr: string;
+  error?: string;
+  isSecurityError?: boolean;
+}
 
 export async function runPoc(
   {
     filePath,
   }: {
-      filePath: string;
+    filePath: string;
   },
   dependencies: { fs: typeof fs; path: typeof path; execAsync: typeof execAsync; execFileAsync: typeof execFileAsync } = { fs, path, execAsync, execFileAsync }
-): Promise<CallToolResult> {
+): Promise<RunPocResult> {
   try {
     const pocDir = dependencies.path.dirname(filePath);
+    const pocFileName = dependencies.path.basename(filePath);
 
-// 🛡️ Validate that the filePath is within the safe PoC directory
+    // Only write the path traversal temp file if the PoC is actually for a path traversal vulnerability.
+    if (pocFileName.includes('path_traversal')) {
+      const tempFilePath = dependencies.path.join(process.cwd(), PATH_TRAVERSAL_TEMP_FILE);
+      await dependencies.fs.writeFile(tempFilePath, 'This is a path traversal test file to verify the vulnerability.');
+    }
+
+    // Validate that the filePath is within the safe PoC directory
     const resolvedFilePath = dependencies.path.resolve(filePath);
     const safePocDir = dependencies.path.resolve(process.cwd(), POC_DIR);
 
     if (!resolvedFilePath.startsWith(safePocDir + dependencies.path.sep)) {
       return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({
-              error: `Security Error: PoC execution is restricted to files within '${safePocDir}'. Attempted to access '${resolvedFilePath}'.`,
-            }),
-          },
-        ],
-        isError: true,
+        stdout: '',
+        stderr: '',
+        error: `Security Error: PoC execution is restricted to files within '${safePocDir}'. Attempted to access '${resolvedFilePath}'.`,
+        isSecurityError: true,
       };
     }
 
@@ -102,9 +111,14 @@ export async function runPoc(
 
       installCmd = 'go mod tidy';
     } else {
-      runCmd = 'node';
-      runArgs = [filePath];
-      installCmd = 'npm install --registry=https://registry.npmjs.org/';
+      if (ext === '.ts') {
+        runCmd = 'npx';
+        runArgs = ['ts-node', filePath];
+      } else {
+        runCmd = 'node';
+        runArgs = [filePath];
+      }
+      installCmd = null;
     }
 
     if (installCmd) {
@@ -118,8 +132,16 @@ export async function runPoc(
 
     let output: { stdout: string; stderr: string };
 
+    const execOptions: any = { cwd: pocDir };
+    if (runCmd === 'npx') {
+      execOptions.env = {
+        ...process.env,
+        npm_config_cache: dependencies.path.join(pocDir, '.npx_cache')
+      };
+    }
+
     try {
-      output = await dependencies.execFileAsync(runCmd, runArgs);
+      output = (await dependencies.execFileAsync(runCmd, runArgs, execOptions)) as unknown as { stdout: string; stderr: string };
     } catch (error: any) {
       const errorMessage = error.message || '';
       const errorOutput = (error.stdout || '') + (error.stderr || '');
@@ -136,8 +158,7 @@ export async function runPoc(
             await dependencies.execAsync(`python -m venv --system-site-packages "${venvDir}"`);
           }
 
-          // Retry execution with the updated venv
-          output = await dependencies.execFileAsync(runCmd, runArgs);
+          output = (await dependencies.execFileAsync(runCmd, runArgs, execOptions)) as unknown as { stdout: string; stderr: string };
         } catch (retryError: any) {
           // If retry fails, throw the original error (or the retry error if it's new/different)
           throw retryError;
@@ -149,14 +170,7 @@ export async function runPoc(
 
     const { stdout, stderr } = output;
 
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({ stdout, stderr }),
-        },
-      ],
-    };
+    return { stdout, stderr };
   } catch (error) {
     let errorMessage = 'An unknown error occurred.';
     let stdout = '';
@@ -170,13 +184,18 @@ export async function runPoc(
     }
 
     return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({ error: errorMessage, stdout, stderr }),
-        },
-      ],
-      isError: true,
+      error: errorMessage,
+      stdout,
+      stderr,
     };
+  } finally {
+    // Cleanup path traversal temp file if it exists
+    const tempFilePath = dependencies.path.join(process.cwd(), PATH_TRAVERSAL_TEMP_FILE);
+    try {
+      await dependencies.fs.access(tempFilePath);
+      await dependencies.fs.unlink(tempFilePath);
+    } catch {
+      // Ignore if file doesn't exist or can't be deleted
+    }
   }
 }

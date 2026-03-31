@@ -40,3 +40,7 @@ export const IGNORED_FILES = [
   'composer.lock', 'npm-debug.log', 'yarn-debug.log', 'yarn-error.log',
   '.env.example', '.env.template', '.env.dist'
 ];
+
+// This file is used for testing path traversal vulnerabilities.
+// It is created in the workspace root by the poc_context tool and deleted by run_poc.
+export const PATH_TRAVERSAL_TEMP_FILE = 'gcli_secext_path_traversal_test.txt';

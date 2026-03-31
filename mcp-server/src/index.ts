@@ -10,13 +10,19 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { promises as fs } from 'fs';
+import { exec, execFile } from 'child_process';
+import { promisify } from 'util';
 import path from 'path';
-import { getAuditScope, getFilesToAudit, getLineCount } from './filesystem.js';
+import { getAuditScope, getFilesToAudit, getLineCount, detectProjectLanguage } from './filesystem.js';
 import { findLineNumbers } from './security.js';
 import { parseMarkdownToDict } from './parser.js';
-import { SECURITY_DIR_NAME, POC_DIR_NAME } from './constants.js';
+import { SECURITY_DIR_NAME, POC_DIR_NAME, PATH_TRAVERSAL_TEMP_FILE } from './constants.js';
+import { loadKnowledge, VulnerabilityType } from './knowledge.js';
+import { SECURITY_PATCH_CONTEXT_TOOL_NAME, SECURITY_PATCH_CONTEXT_TOOL_DESCRIPTION, SecurityPatchContextArgsSchema, getSecurityPatchContextMessages } from './tools/security_patch_context.js';
+import { POC_CONTEXT_TOOL_NAME, POC_CONTEXT_TOOL_DESCRIPTION, PocContextArgsSchema, getPocContext } from './tools/poc_context.js';
+import { RUN_POC_TOOL_NAME, RUN_POC_TOOL_DESCRIPTION, RunPocArgsSchema, getRunPocMessages } from './tools/run_poc.js';
 
-import { runPoc } from './poc.js';
+// import { runPoc } from './poc.js';
 
 const server = new McpServer({
   name: 'gemini-cli-security',
@@ -75,12 +81,10 @@ server.tool(
 );
 
 server.tool(
-  'run_poc',
-  'Runs the generated PoC code.',
-  {
-    filePath: z.string().describe('The absolute path to the PoC file to run.'),
-  } as any,
-  (input: { filePath: string }) => runPoc(input)
+  RUN_POC_TOOL_NAME,
+  RUN_POC_TOOL_DESCRIPTION,
+  RunPocArgsSchema.shape as any,
+  getRunPocMessages as any
 );
 
 server.tool(
@@ -91,16 +95,16 @@ server.tool(
     try {
       const reportPath = path.join(process.cwd(), `${SECURITY_DIR_NAME}/DRAFT_SECURITY_REPORT.md`);
       const outputPath = path.join(process.cwd(), `${SECURITY_DIR_NAME}/security_report.json`);
-      
+
       const content = await fs.readFile(reportPath, 'utf-8');
       const results = parseMarkdownToDict(content);
 
       await fs.writeFile(outputPath, JSON.stringify(results, null, 2));
 
       return {
-        content: [{ 
-          type: 'text', 
-          text: `Successfully created JSON report at ${outputPath}` 
+        content: [{
+          type: 'text',
+          text: `Successfully created JSON report at ${outputPath}`
         }]
       };
     } catch (error) {
@@ -126,12 +130,12 @@ server.registerPrompt(
   (args: any) => {
     const { notePath, content } = args;
     return {
-    messages: [
-      {
-        role: 'user' as const,
-        content: {
-          type: 'text' as const,
-          text: `You are a helpful assistant that helps users maintain notes. Your task is to add a new entry to the notes file at '${SECURITY_DIR_NAME}/${notePath}'.
+      messages: [
+        {
+          role: 'user' as const,
+          content: {
+            type: 'text' as const,
+            text: `You are a helpful assistant that helps users maintain notes. Your task is to add a new entry to the notes file at '${SECURITY_DIR_NAME}/${notePath}'.
 
         You MUST use the 'ReadFile' and 'WriteFile' tools.
 
@@ -153,61 +157,22 @@ server.registerPrompt(
                 *   Use the 'WriteFile' tool to create the new file with the complete initial content.
 
         Your primary goal is to maintain strict consistency with the format of the note file. Do not introduce any formatting changes.`,
+          },
         },
-      },
-    ],
+      ],
     }
   },
 );
 
-server.registerPrompt(
-  'security:poc',
+server.registerTool(
+  POC_CONTEXT_TOOL_NAME,
   {
-    title: 'PoC Generator',
-    description: '[Experimental] Generates a Proof-of-Concept (PoC) for a given vulnerability.',
-    argsSchema: {
-      problemStatement: z.string().optional().describe('A description of the security problem or vulnerability.'),
-      sourceCodeLocation: z.string().optional().describe('The location of the source code that contains the vulnerability.'),
-    } as any,
+    description: POC_CONTEXT_TOOL_DESCRIPTION,
+    inputSchema: PocContextArgsSchema as any,
   },
-  (args: any) => {
-    const { problemStatement, sourceCodeLocation } = args;
-    return {
-      messages: [
-        {
-          role: 'user' as const,
-          content: {
-            type: 'text' as const,
-            text: `You are a security expert. Your task is to generate a Proof-of-Concept (PoC) for a vulnerability for Node.js, Python or Go projects. If the project is not for one of these languages, let the user know that you cannot generate a PoC for this project type.
-
-          Problem Statement: ${problemStatement || 'No problem statement provided, if you need more information to generate a PoC, ask the user.'}
-          Source Code Location: ${sourceCodeLocation || 'No source code location provided, try to derive it from the Problem Statement. If you cannot derive it, ask the user for the source code location.'}
-      
-          **Workflow:**
-
-          1.  **Generate PoC:**
-              *   Create a '${POC_DIR_NAME}' directory in '${SECURITY_DIR_NAME}' if it doesn't exist.
-              *   Based on the user's project language, generate a script for Python/Go/Node that demonstrates the vulnerability under the '${SECURITY_DIR_NAME}/${POC_DIR_NAME}/' directory.
-              *   **CRITICAL:** If the PoC script requires external dependencies (e.g. npm packages, PyPI packages) that are not already in the user's project:
-                  *   For Node.js: Generate a \`package.json\` in the '${POC_DIR_NAME}' directory.
-                  *   For Python: Generate a \`requirements.txt\` in the '${POC_DIR_NAME}' directory.
-                  *   For Go: The execution engine will automatically run \`go mod init poc\` and \`go mod tidy\`.
-              *   Based on the vulnerability type certain criteria must be met in our script, otherwise generate the PoC to the best of your ability:
-                  *   If the vulnerability is a Path Traversal Vulnerability:
-                      *   **YOU MUST** Use the 'write_file' tool to create a temporary file '../gcli_secext_temp.txt' directly outside of the project directory. 
-                      *   The script should then try to read the file using the vulnerability in the user's code. 
-                      *   **YOU MUST** Use the 'write_file' tool to delete the '../gcli_secext_temp.txt' file after the verification step, regardless of whether the read was successful or not.
-              *   The script should import the user's vulnerable file(s), and demonstrate the vulnerability in their code.
-
-          2.  **Run PoC:**
-              *   Use the 'run_poc' tool with absolute file paths to execute the code.
-              *   Analyze the output to verify if the vulnerability is reproducible.`,
-          },
-        },
-      ],
-    };
-  },
+  getPocContext as any
 );
+
 server.registerPrompt(
   'security:scan_deps',
   {
@@ -221,36 +186,108 @@ server.registerPrompt(
         content: {
           type: 'text',
           text: `You are a highly skilled senior security analyst. First, you must greet the user. Then perform the scan.
-Your primary task is to conduct a security audit of the vulnerabilities in the dependencies of this project. You are required to only conduct the scan, not fix the vulnerabilities.
+                Your primary task is to conduct a security audit of the vulnerabilities in the dependencies of this project. You are required to only conduct the scan, not patch the vulnerabilities.
 
-**Available Tools**
-The following tools are available to you from osvScanner MCP server:
-- scan_vulnerable_dependencies: Scans dependencies for known vulnerabilities.
-- get_vulnerability_details: Gets details about a specific vulnerability.
-- ignore_vulnerability: Ignores a specific vulnerability.
+                **Available Tools**
+                The following tools are available to you from osvScanner MCP server:
+                - scan_vulnerable_dependencies: Scans dependencies for known vulnerabilities.
+                - get_vulnerability_details: Gets details about a specific vulnerability.
+                - ignore_vulnerability: Ignores a specific vulnerability.
 
-Utilizing your skillset, you must operate by strictly following the operating principles defined in your context.
+                Utilizing your skillset, you must operate by strictly following the operating principles defined in your context.
 
-**Step 1: Perform initial scan**
+                **Step 1: Perform initial scan**
 
-Use the scan_vulnerable_dependencies tool from osvScanner MCP server with recursive on the project, always use the absolute path.
-This will return a report of all the relevant lockfiles and all vulnerable dependencies in those files.
+                Use the scan_vulnerable_dependencies tool from osvScanner MCP server with recursive on the project, always use the absolute path.
+                This will return a report of all the relevant lockfiles and all vulnerable dependencies in those files.
 
-**Step 2: Analyse the report**
+                **Step 2: Analyse the report**
 
-Go through the report and determine the relevant project lockfiles (ignoring lockfiles in test directories),
-and prioritise which vulnerability to fix based on the description and severity.
-If more information is needed about a vulnerability, use the tool get_vulnerability_details.
+                Go through the report and determine the relevant project lockfiles (ignoring lockfiles in test directories),
+                and prioritise which vulnerability to patch based on the description and severity.
+                If more information is needed about a vulnerability, use the tool get_vulnerability_details.
 
-**Step 3: Prioritisation**
+                **Step 3: Prioritisation**
 
-Give advice on which vulnerabilities to prioritise fixing, and general advice on how to go about fixing
-them by updating. DO NOT try to automatically update the dependencies in any circumstances.`
+                Give advice on which vulnerabilities to prioritise patching, and general advice on how to go about patching
+                them by updating. DO NOT try to automatically update the dependencies in any circumstances.`
         },
       },
     ],
   })
 );
+
+server.tool(
+  SECURITY_PATCH_CONTEXT_TOOL_NAME,
+  SECURITY_PATCH_CONTEXT_TOOL_DESCRIPTION,
+  SecurityPatchContextArgsSchema.shape as any,
+  getSecurityPatchContextMessages as any
+);
+
+server.tool(
+  'install_dependencies',
+  'Executes a script file inside workspace.',
+  {
+    scriptPath: z.string().describe('Absolute path to the script file to execute.'),
+    targetFile: z.string().describe('The target file requiring dependencies.'),
+    cwd: z.string().optional().describe('Execution directory (optional. overrides calculation).'),
+  } as any,
+  (async (input: { scriptPath: string; targetFile: string; cwd?: string }) => {
+    try {
+      const execFileAsync = promisify(execFile);
+      let executionDir = input.cwd;
+
+      if (!executionDir) {
+        const startDir = path.dirname(input.targetFile);
+        executionDir = startDir;
+
+        let current = startDir;
+        for (let i = 0; i < 5; i++) {
+          try {
+            const hasNode = await fs.access(path.join(current, 'package.json')).then(() => true).catch(() => false);
+            const hasPy = await fs.access(path.join(current, 'requirements.txt')).then(() => true).catch(() => false);
+            if (hasNode || hasPy) {
+              executionDir = current;
+              break;
+            }
+          } catch { }
+          const parent = path.dirname(current);
+          if (parent === current) break;
+          current = parent;
+        }
+      }
+
+      await fs.chmod(input.scriptPath, 0o755);
+      const output = await execFileAsync(input.scriptPath, { cwd: executionDir });
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              stdout: output.stdout,
+              stderr: output.stderr,
+            }),
+          },
+        ],
+      };
+    } catch (error: any) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              error: error.message || String(error),
+              stdout: error.stdout || '',
+              stderr: error.stderr || '',
+            }),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }) as any
+);
+
 async function startServer() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
