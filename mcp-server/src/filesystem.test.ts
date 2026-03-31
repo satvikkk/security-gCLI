@@ -5,7 +5,7 @@
  */
 
 import { expect, describe, it, beforeAll, afterAll } from 'vitest';
-import { isGitHubRepository, getAuditScope, reduceAuditScope, getLineCount } from './filesystem';
+import { isGitHubRepository, getAuditScope, getFilesToAudit, getLineCount } from './filesystem';
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -42,7 +42,7 @@ describe('filesystem', () => {
     execSync('git remote remove origin');
   });
 
-  it('should reduce the audit scope correctly by filtering out ignored files', () => {
+  it('should get the audit files correctly by filtering out ignored files', () => {
     // Create some files that should be ignored
     fs.mkdirSync('node_modules', { recursive: true });
     fs.writeFileSync('node_modules/test.js', 'console.log("ignored")');
@@ -61,7 +61,7 @@ describe('filesystem', () => {
     fs.mkdirSync('untracked', { recursive: true });
     fs.writeFileSync('untracked/file.ts', '...');
 
-    const files = reduceAuditScope();
+    const files = getFilesToAudit();
 
     expect(files).toContain('src/index.ts');
     expect(files).toContain('package.json');

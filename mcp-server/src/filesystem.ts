@@ -61,11 +61,11 @@ export function getAuditScope(base?: string, head?: string): string {
 }
 
 /**
- * Reduces the audit scope by filtering out irrelevant files and folders.
+ * Gets a list of relevant file paths for auditing, filtering out irrelevant files and folders.
  * Irrelevant files include documentation, tests, build artifacts, etc.
  * @returns A list of relevant file paths for auditing.
  */
-export function reduceAuditScope(): string[] {
+export function getFilesToAudit(): string[] {
   const IGNORED_FOLDERS = [
     'node_modules', 'dist', 'build', 'out', 'target', 'bin', 'obj', 'vendor',
     'docs', 'documentation', 'tests', 'test', 'spec', '__tests__',

@@ -109,7 +109,7 @@ Your first action is to create a `SECURITY_ANALYSIS_TODO.md` file with the follo
 You will now begin executing the plan. The following are your precise instructions to start with.
 
 1.  **To complete the 'Define the audit scope' task:**
-    *   You **MUST** use the `reduce_audit_scope` tool to get a list of files to be audited.
+    *   You **MUST** use the `get_files_to_audit` tool to get a list of files to be audited.
     *   After determining the file list, you **MUST** use the `get_line_count` tool to calculate the total number of lines of code.
     *   If the total line count exceeds 20000, you **MUST** ask the user for confirmation to proceed. If the user denies, you **MUST** stop the analysis.
     *   Inform the user about the files that will be analyzed.

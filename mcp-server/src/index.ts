@@ -11,7 +11,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { promises as fs } from 'fs';
 import path from 'path';
-import { getAuditScope, reduceAuditScope, getLineCount } from './filesystem.js';
+import { getAuditScope, getFilesToAudit, getLineCount } from './filesystem.js';
 import { findLineNumbers } from './security.js';
 import { parseMarkdownToDict } from './parser.js';
 import { SECURITY_DIR_NAME, POC_DIR_NAME } from './constants.js';
@@ -58,11 +58,11 @@ server.tool(
 );
 
 server.tool(
-  'reduce_audit_scope',
-  'Reduces the audit scope by filtering out irrelevant files and folders.',
+  'get_files_to_audit',
+  'Lists relevant files for auditing by filtering out irrelevant files and folders.',
   {} as any,
   (() => {
-    const files = reduceAuditScope();
+    const files = getFilesToAudit();
     return {
       content: [
         {
