@@ -2,7 +2,7 @@ name: Package and Upload Release Assets
 
 # Global variables
 env:
-  FILES_TO_PACKAGE: "gemini-extension.json GEMINI.md LICENSE commands/ mcp-server/"
+  FILES_TO_PACKAGE: "gemini-extension.json GEMINI.md LICENSE commands/ mcp-server/ skills/"
 
 on:
   release:
