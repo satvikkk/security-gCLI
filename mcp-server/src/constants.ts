@@ -41,6 +41,11 @@ export const IGNORED_FILES = [
   '.env.example', '.env.template', '.env.dist'
 ];
 
+export const EXPLOITS_DIR_NAME = 'exploits';
+export const EXPLOITS_DIR = path.join(SECURITY_DIR, EXPLOITS_DIR_NAME);
+export const SANDBOX_DIR_NAME = 'sandbox';
+export const EXPLOITS_TOML_FILE = 'exploits.toml';
+
 // This file is used for testing path traversal vulnerabilities.
 // It is created in the workspace root by the poc_context tool and deleted by run_poc.
 export const PATH_TRAVERSAL_TEMP_FILE = 'gcli_secext_path_traversal_test.txt';

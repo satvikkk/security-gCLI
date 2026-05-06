@@ -21,6 +21,9 @@ import { loadKnowledge, VulnerabilityType } from './knowledge.js';
 import { SECURITY_PATCH_CONTEXT_TOOL_NAME, SECURITY_PATCH_CONTEXT_TOOL_DESCRIPTION, SecurityPatchContextArgsSchema, getSecurityPatchContextMessages } from './tools/security_patch_context.js';
 import { POC_CONTEXT_TOOL_NAME, POC_CONTEXT_TOOL_DESCRIPTION, PocContextArgsSchema, getPocContext } from './tools/poc_context.js';
 import { RUN_POC_TOOL_NAME, RUN_POC_TOOL_DESCRIPTION, RunPocArgsSchema, getRunPocMessages } from './tools/run_poc.js';
+import { SETUP_EXPLOIT_SANDBOX_TOOL_NAME, SETUP_EXPLOIT_SANDBOX_TOOL_DESCRIPTION, SetupExploitSandboxArgsSchema, setupExploitSandbox } from './tools/setup_exploit_sandbox.js';
+import { RUN_EXPLOIT_TOOL_NAME, RUN_EXPLOIT_TOOL_DESCRIPTION, RunExploitArgsSchema, runExploit } from './tools/run_exploit.js';
+import { GENERATE_EXPLOITS_TOML_TOOL_NAME, GENERATE_EXPLOITS_TOML_TOOL_DESCRIPTION, GenerateExploitsTomlArgsSchema, generateExploitsToml } from './tools/generate_exploits_toml.js';
 
 // import { runPoc } from './poc.js';
 
@@ -286,6 +289,27 @@ server.tool(
       };
     }
   }) as any
+);
+
+server.tool(
+  SETUP_EXPLOIT_SANDBOX_TOOL_NAME,
+  SETUP_EXPLOIT_SANDBOX_TOOL_DESCRIPTION,
+  SetupExploitSandboxArgsSchema.shape as any,
+  setupExploitSandbox as any
+);
+
+server.tool(
+  RUN_EXPLOIT_TOOL_NAME,
+  RUN_EXPLOIT_TOOL_DESCRIPTION,
+  RunExploitArgsSchema.shape as any,
+  runExploit as any
+);
+
+server.tool(
+  GENERATE_EXPLOITS_TOML_TOOL_NAME,
+  GENERATE_EXPLOITS_TOML_TOOL_DESCRIPTION,
+  GenerateExploitsTomlArgsSchema.shape as any,
+  generateExploitsToml as any
 );
 
 async function startServer() {
